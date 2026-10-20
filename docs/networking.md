@@ -5,9 +5,12 @@ IPs and private ranges. This doc covers how to get there without exposing a home
 
 ## Topology used here
 
+The UI hostname (`tv.`) goes through a Cloudflare Tunnel + Access (see README). Only the
+**stream** hostname uses the path below:
+
 ```
 Tesla (LTE / Wi-Fi)
-   │ https://tv.<domain>  (DNS-only A record -> VPS public IP)
+   │ https://tv-stream.<domain>  (DNS-only A record -> VPS public IP)
    ▼
 Public VPS (cloud firewall: TCP 80, 443, UDP 51820 open)
    │ nftables: DNAT eth0:80,443 -> 10.77.0.2, SNAT -> 10.77.0.1
@@ -34,9 +37,10 @@ home node directly but two others only `via DERP(sea)`. A video stream that sile
 falls back to DERP would stutter and lean on a free shared service. Plain WireGuard has no
 relay: it either works directly or it doesn't, and it costs nothing beyond the VPS.
 
-**Cloudflare Tunnel:** works technically, but Cloudflare's terms restrict serving video or
-large non-HTML content through the free CDN/tunnel. A continuous 1–3 Mbit/s stream is
-exactly what that clause is about.
+**Cloudflare Tunnel (for the video):** works technically, but Cloudflare's terms restrict
+serving video or large non-HTML content through the free CDN/tunnel, and a continuous
+1–3 Mbit/s stream is exactly what that clause is about. So only the lightweight UI and
+control channel go through Cloudflare (for Access); the video uses the direct path.
 
 ## Bandwidth math
 

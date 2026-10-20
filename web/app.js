@@ -26,14 +26,40 @@
     toastTimer = setTimeout(() => el.classList.add('hidden'), ms);
   }
 
+  // ---------- stream ticket ----------
+  // The video host is NOT behind Cloudflare Access; it accepts a short-lived HMAC ticket
+  // which this (Access-protected) origin hands out.
+  let ticket = null;
+  async function getTicket() {
+    const r = await fetch('/api/ticket', { credentials: 'same-origin', cache: 'no-store' });
+    if (!r.ok) throw new Error('ticket ' + r.status + ' (Access session expired? reload the page)');
+    ticket = await r.json();
+    setTimeout(() => getTicket().catch(() => {}), Math.max(60, ticket.ttl - 600) * 1000); // refresh before expiry
+    return ticket;
+  }
+
   // ---------- video ----------
-  function startPlayer() {
+  async function startPlayer() {
     if (player) { try { player.destroy(); } catch (e) { /* ignore */ } player = null; }
+    if (!ticket) {
+      try { await getTicket(); } catch (e) { toast(e.message, 6000); return; }
+    }
     // JSMpeg destroy() removes the canvas' GL context; swap in a fresh canvas element.
     const fresh = canvas.cloneNode(false);
     canvas.parentNode.replaceChild(fresh, document.getElementById('screen'));
     bindPointer(fresh);
-    player = new JSMpeg.Player(proto + location.host + '/ws/video', {
+    // JSMpeg's WebSocket source re-uses the URL on reconnect, so give it a getter-backed URL
+    // that always carries the current ticket.
+    const VideoSource = function (url, opts) {
+      JSMpeg.Source.WebSocket.call(this, url, opts);
+    };
+    VideoSource.prototype = Object.create(JSMpeg.Source.WebSocket.prototype);
+    VideoSource.prototype.start = function () {
+      this.url = ticket.stream + '/ws/video?t=' + encodeURIComponent(ticket.ticket);
+      JSMpeg.Source.WebSocket.prototype.start.call(this);
+    };
+    player = new JSMpeg.Player(ticket.stream + '/ws/video', {
+      source: VideoSource,
       canvas: fresh,
       audio: AUDIO_MODE === 'webaudio',
       videoBufferSize: 1024 * 1024,
@@ -48,9 +74,9 @@
   }
 
   function startAudioElement() {
-    if (AUDIO_MODE !== 'element') return;
+    if (AUDIO_MODE !== 'element' || !ticket) return;
     if (audioEl) { audioEl.pause(); audioEl.remove(); }
-    audioEl = new Audio('/audio.mp3?t=' + Date.now());
+    audioEl = new Audio(ticket.audio + '/audio.mp3?t=' + encodeURIComponent(ticket.ticket) + '&n=' + Date.now());
     audioEl.preload = 'none';
     audioEl.play().catch((e) => toast('Audio blocked: ' + e.message));
     // keep latency bounded: if the element falls >1.5 s behind live, jump forward
@@ -60,10 +86,10 @@
     });
   }
 
-  $('b-start').addEventListener('click', () => {
+  $('b-start').addEventListener('click', async () => {
     started = true;
     $('start').classList.add('hidden');
-    startPlayer();
+    await startPlayer();
     startAudioElement();
   });
 
@@ -71,9 +97,10 @@
   function connectCtl() {
     ctl = new WebSocket(proto + location.host + '/ws/ctl');
     ctl.onopen = () => { ctlBackoff = 500; setNet('ok'); };
-    ctl.onclose = (ev) => {
+    ctl.onclose = () => {
       setNet('bad');
-      if (ev.code === 1006 && !document.cookie && Date.now() - lastPong > 60000) { /* may be logged out */ }
+      // A 403 on the upgrade usually means the Access session expired: reload to re-auth.
+      if (Date.now() - lastPong > 120000 && lastPong) { fetch('/api/ticket', { cache: 'no-store' }).then((r) => { if (r.status === 403) location.reload(); }).catch(() => {}); }
       setTimeout(connectCtl, ctlBackoff);
       ctlBackoff = Math.min(ctlBackoff * 2, 8000);
     };
