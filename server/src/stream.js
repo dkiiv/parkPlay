@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const TS_PACKET = 188;
-const MAX_BUFFERED = 2 * 1024 * 1024; // drop chunks for a viewer that falls this far behind (LTE dip)
+const MAX_BUFFERED = 6 * 1024 * 1024; // the client buffers anyway; only drop if a viewer is hopelessly behind
 
 // Output presets. The capture is always the full virtual screen; ffmpeg scales it down.
 const PRESETS = {
@@ -26,6 +26,7 @@ class Streamer {
     this.restartTimer = null;
     this.stats = { bytesOut: 0, drops: 0, starts: 0 };
     this.onRestart = () => {};
+    this.clockBase = 0; // timestamps only need to be monotonic; the client learns the offset
   }
 
   outSize() {
@@ -120,12 +121,16 @@ class Streamer {
   }
 
   // Send only whole 188-byte TS packets so a dropped chunk never desyncs the demuxer.
+  // Each message is prefixed with an 8-byte float64 send timestamp (ms, monotonic) so the
+  // client's jitter buffer can re-space bursty LTE delivery.
   broadcast(chunk) {
     let buf = this.leftover.length ? Buffer.concat([this.leftover, chunk]) : chunk;
     const usable = buf.length - (buf.length % TS_PACKET);
     this.leftover = buf.subarray(usable);
     if (!usable) return;
-    const out = buf.subarray(0, usable);
+    const hdr = Buffer.allocUnsafe(8);
+    hdr.writeDoubleBE(performance.now() + this.clockBase, 0);
+    const out = Buffer.concat([hdr, buf.subarray(0, usable)]);
     for (const ws of this.clients) {
       if (ws.readyState !== WebSocket.OPEN) continue;
       if (ws.bufferedAmount > MAX_BUFFERED) { this.stats.drops++; continue; }

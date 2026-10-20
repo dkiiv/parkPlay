@@ -56,3 +56,9 @@ body.page { overflow: auto; display: flex; justify-content: center; }
 .probe .row button { height: 52px; padding: 0 22px; border: 0; border-radius: 10px; background: #242424; font-size: 18px; }
 .probe .row button.primary { background: var(--acc); color: #fff; }
 .probe canvas { background: #111; border-radius: 8px; max-width: 100%; }
+
+/* inline SVG icons (Tesla browser lacks many Unicode symbol glyphs) */
+button svg { width: 26px; height: 26px; fill: currentColor; display: block; margin: auto; }
+#b-start { display: flex; align-items: center; gap: 12px; }
+#b-start svg { width: 36px; height: 36px; margin: 0; }
+#net { width: 14px; height: 14px; border-radius: 50%; padding: 0; margin: 0 6px; background: currentColor; display: inline-block; }

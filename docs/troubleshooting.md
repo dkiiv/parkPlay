@@ -9,7 +9,6 @@
 | Car keyboard doesn't open | Tap the type bar's field itself. The keyboard only opens for a real local `<input>`. Use ⌨ to open it manually. |
 | `{"error":"Cloudflare Access login required"}` | Request reached the origin without a valid Access JWT. Check the app's AUD tag matches `TV_ACCESS_AUD` and the team domain matches `TV_ACCESS_TEAM`. `journalctl -u teslatv-web` shows `access verify error` details. |
 | Toast "ticket 403" / video won't connect | Access session expired. Reload the page to re-authenticate. A video WS 403 can also mean the page wasn't loaded from `TV_PUBLIC_HOST` (Origin check). |
-| Google sign-in blocked in the car | Use the Access **One-time PIN** (email code) option on the login page. |
 | `wg-quick` segfaults in the LXC | See networking.md, use the bash drop-in. |
 | `caddy validate` fails on `encode` | Use a named matcher (`@compressible not path ...`). The `match` sub-block is for response matchers only. |
 
@@ -24,3 +23,11 @@ sudo -u teslatv env DISPLAY=:99 ffmpeg -v error -y -f x11grab -video_size 1920x1
 # list probe reports from the car
 sudo ls /var/lib/teslatv/probe/
 ```
+
+## Lag
+
+| Symptom | Check / fix |
+|---|---|
+| Choppy even on Low | The kiosk itself may be dropping frames. Run `tools/measure.sh`: dropped should be roughly <15%. Chrome with SwiftShader GL dropped ~60% of YouTube frames on 6 vCPU; `TV_GPU_MODE=off` (software compositor, the default) dropped ~11%. |
+| Bursty / freezes then races | Network jitter. The client buffer adapts by itself; `journalctl -u teslatv-web \| grep "client stats"` shows the car's fps, kbit/s and `bufferMs` every 10 s. |
+| Icons show as boxes | The Tesla browser lacks many Unicode symbol glyphs. All UI icons are inline SVG; don't use emoji or symbol characters in the UI. |

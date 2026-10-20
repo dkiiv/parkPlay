@@ -35,10 +35,15 @@ UI, your account, subscriptions, search, comments, and everything else.
   MJPEG streaming.
 - **Audio:** MP2 in the same TS stream, played through WebAudio and kept in sync by JSMpeg.
   Fallback: `?audio=element` uses a separate MP3 stream in an `<audio>` element.
-- **Input:** taps/drags go to Chrome as real **touch events** over the DevTools Protocol
-  (so YouTube scrolls and scrubs natively). A mouse mode is one tap away. When a text field
+- **Input:** works like a tablet. Taps and drags go to Chrome as real **touch events** over the
+  DevTools Protocol: tap = click, drag = scroll, hold = long-press. When a text field
   gets focus in the remote page, a type bar pops up locally so the **car's on-screen
   keyboard** opens; what you type is mirrored into the remote page.
+- **Smooth playback over LTE:** each video message carries the server's send timestamp, and
+  the client holds chunks in an **adaptive jitter buffer** (250 ms–4 s, sized to the 98th
+  percentile of measured network jitter), releasing them with their original spacing. Bursty
+  cellular delivery then plays smoothly instead of stuttering. This is the same idea as the
+  "loading" pause on hosted services.
 - **Bandwidth:** ffmpeg only runs while someone is watching. Presets: low ~0.7, med ~1.5,
   high ~3 Mbit/s (measured: med ≈ 1.2–1.6 Mbit/s on YouTube content).
 
@@ -56,7 +61,7 @@ UI, your account, subscriptions, search, comments, and everything else.
 | `deploy/systemd/` | `teslatv-session.service`, `teslatv-web.service`, `cloudflared-teslatv.service` |
 | `deploy/vps/` | WireGuard + nftables DNAT for a public front-door VPS |
 | `docs/` | Architecture, networking/bandwidth, troubleshooting |
-| `tools/` | `e2e-access.js` (end-to-end test with an Access service token), `push.sh` (deploy), `cdp-eval.js` (debug) |
+| `tools/` | `e2e-access.js` (end-to-end test with an Access service token), `client-test.js` (headless client: fps / kbit/s / buffer), `measure.sh` (kiosk dropped-frame check), `push.sh` (deploy), `cdp-eval.js` (debug) |
 
 ## Authentication: Cloudflare Access, with video kept off Cloudflare
 
@@ -73,8 +78,8 @@ Access; the stream never touches Cloudflare. Requests to the stream host without
 ticket get 403. Anything else on that host gets 404.
 
 Car notes: set the Access session to something long (e.g. 720 h) so the car rarely
-re-authenticates. Enable the **One-time PIN** login method next to Google in case Google
-treats the car's browser as embedded and blocks the sign-in.
+re-authenticates. Google sign-in works from the Tesla browser (tested on a 2025 Model 3), so Google can be the only
+identity provider, with auto-redirect on.
 
 ## Quick start
 
@@ -114,7 +119,6 @@ Cloudflare Tunnel for the video).
 | ‹ › ↻ ⌂ | Back, forward, reload, home (YouTube) |
 | Address bar | Search YouTube, or type a URL |
 | ⌨ | Open the type bar manually (opens the car keyboard) |
-| ☝ / ↖ | Touch mode (drag scrolls) vs mouse mode (drag selects / scrubs precisely) |
 | Low / Med / High | Stream quality (restarts the encoder) |
 | ⤢ | Hide the toolbar (☰ brings it back) |
 

@@ -198,6 +198,7 @@ wssCtl.on('connection', (ws) => {
         case 'nav': await chrome.nav(m.a, m.url); break;
         case 'preset': if (streamer.setPreset(m.p)) broadcastCtl({ t: 'preset', preset: streamer.preset }); break;
         case 'ping': ws.send(JSON.stringify({ t: 'pong', ts: m.ts })); break;
+        case 'stats': log(`client stats fps=${m.fps} kbps=${m.kbps} bufferMs=${m.delay} queued=${m.queued}`); break;
       }
     } catch (e) {
       if (!/no active page|not connected/.test(e.message)) log(`ctl ${m.t} error: ${e.message}`);

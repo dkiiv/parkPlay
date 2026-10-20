@@ -45,6 +45,12 @@ WIN_W=$(awk -v w="$TV_SCREEN_W" -v s="$SCALE" 'BEGIN{printf "%d", w/s}')
 WIN_H=$(awk -v h="$TV_SCREEN_H" -v s="$SCALE" 'BEGIN{printf "%d", h/s}')
 EXT_ARGS=()
 [ -n "$TV_EXTENSIONS" ] && EXT_ARGS=(--load-extension="$TV_EXTENSIONS")
+# GPU mode: "off" = Chrome's CPU software compositor (cheapest without a GPU; measured far
+# fewer dropped frames than swiftshader GL), "swiftshader" = emulated GL (WebGL works).
+case "${TV_GPU_MODE:-off}" in
+  swiftshader) GPU_ARGS=(--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader) ;;
+  *)           GPU_ARGS=(--disable-gpu --disable-gpu-compositing --disable-software-rasterizer=false) ;;
+esac
 while true; do
   "$TV_CHROME" \
     --user-data-dir="$TV_PROFILE" \
@@ -61,7 +67,7 @@ while true; do
     --enable-features=OverlayScrollbar \
     --touch-events=enabled \
     --force-device-scale-factor="$SCALE" \
-    --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader \
+    "${GPU_ARGS[@]}" \
     --disable-dev-shm-usage \
     "${EXT_ARGS[@]}" \
     "$TV_HOME_URL" &

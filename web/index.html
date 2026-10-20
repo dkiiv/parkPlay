@@ -10,30 +10,44 @@
 <title>TeslaTV</title>
 </head>
 <body class="app">
+  <!-- Icons are inline SVG: the Tesla browser lacks many Unicode symbol glyphs (they render as boxes). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15.4 4.6 8 12l7.4 7.4-1.4 1.4L5.2 12 14 3.2z"/></symbol>
+    <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M8.6 19.4 16 12 8.6 4.6 10 3.2l8.8 8.8-8.8 8.8z"/></symbol>
+    <symbol id="i-reload" viewBox="0 0 24 24"><path d="M17.7 6.3A8 8 0 1 0 19.7 14h-2.1a6 6 0 1 1-1.4-6.2L13 11h7V4z"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3 2 12h3v8h5v-5h4v5h5v-8h3z"/></symbol>
+    <symbol id="i-kbd" viewBox="0 0 24 24"><path d="M20 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zM11 8h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-1 2H5v-2h2zm0-3H5V8h2zm9 7H8v-2h8zm0-4h-2v-2h2zm0-3h-2V8h2zm3 3h-2v-2h2zm0-3h-2V8h2z"/></symbol>
+    <symbol id="i-full" viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5zm9 0h5v5h-2V7h-3zM5 14h2v3h3v2H5zm12 0h2v5h-5v-2h3z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></symbol>
+    <symbol id="i-bksp" viewBox="0 0 24 24"><path d="M22 4H8L1 12l7 8h14zm-3 11.6L17.6 17 14 13.4 10.4 17 9 15.6l3.6-3.6L9 8.4 10.4 7l3.6 3.6L17.6 7 19 8.4 15.4 12z"/></symbol>
+    <symbol id="i-enter" viewBox="0 0 24 24"><path d="M19 7v4H5.8l3.6-3.6L8 6l-6 6 6 6 1.4-1.4L5.8 13H21V7z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4l5.6 5.6L5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  </svg>
+
   <header id="bar">
-    <button id="b-back" title="Back" aria-label="Back">&#x2039;</button>
-    <button id="b-fwd" title="Forward" aria-label="Forward">&#x203A;</button>
-    <button id="b-reload" title="Reload" aria-label="Reload">&#x21BB;</button>
-    <button id="b-home" title="Home" aria-label="Home">&#x2302;</button>
+    <button id="b-back" aria-label="Back"><svg><use href="#i-back"/></svg></button>
+    <button id="b-fwd" aria-label="Forward"><svg><use href="#i-fwd"/></svg></button>
+    <button id="b-reload" aria-label="Reload"><svg><use href="#i-reload"/></svg></button>
+    <button id="b-home" aria-label="Home"><svg><use href="#i-home"/></svg></button>
     <form id="urlform" autocomplete="off">
       <input id="url" type="text" inputmode="search" enterkeyhint="go" spellcheck="false"
              autocapitalize="off" autocorrect="off" placeholder="Search YouTube or type a URL">
     </form>
-    <button id="b-kbd" title="Keyboard" aria-label="Keyboard">&#x2328;</button>
-    <button id="b-mode" title="Touch / mouse input" aria-label="Input mode">&#x261D;</button>
-    <select id="preset" title="Quality" aria-label="Quality">
+    <button id="b-kbd" aria-label="Keyboard"><svg><use href="#i-kbd"/></svg></button>
+    <select id="preset" aria-label="Quality">
       <option value="low">Low</option>
       <option value="med">Med</option>
       <option value="high">High</option>
     </select>
-    <button id="b-full" title="Hide bar" aria-label="Hide bar">&#x2922;</button>
-    <span id="net" title="Connection">&#x25CF;</span>
+    <button id="b-full" aria-label="Hide bar"><svg><use href="#i-full"/></svg></button>
+    <span id="net" class="net-bad" aria-label="Connection"></span>
   </header>
 
   <main id="stage">
     <canvas id="screen"></canvas>
     <div id="start" class="overlay">
-      <button id="b-start">&#x25B6;&nbsp; Tap to start</button>
+      <button id="b-start"><svg><use href="#i-play"/></svg><span>Tap to start</span></button>
       <p class="hint">Starts video + sound. Passengers / parked only.</p>
     </div>
     <div id="status" class="toast hidden"></div>
@@ -41,13 +55,13 @@
 
   <div id="typebar" class="hidden">
     <input id="typer" type="text" enterkeyhint="send" spellcheck="false" autocapitalize="off"
-           autocorrect="off" autocomplete="off" placeholder="Tap here to type into the page">
-    <button id="t-bksp" aria-label="Backspace">&#x232B;</button>
-    <button id="t-enter" aria-label="Enter">&#x21B5;</button>
-    <button id="t-close" aria-label="Close keyboard">&#x2715;</button>
+           autocorrect="off" autocomplete="off" placeholder="Type here - it goes into the page">
+    <button id="t-bksp" aria-label="Backspace"><svg><use href="#i-bksp"/></svg></button>
+    <button id="t-enter" aria-label="Enter"><svg><use href="#i-enter"/></svg></button>
+    <button id="t-close" aria-label="Close keyboard"><svg><use href="#i-close"/></svg></button>
   </div>
 
-  <button id="b-showbar" class="hidden" aria-label="Show bar">&#x2630;</button>
+  <button id="b-showbar" class="hidden" aria-label="Show bar"><svg><use href="#i-menu"/></svg></button>
 
   <script src="/vendor/jsmpeg.min.js"></script>
   <script src="/app.js"></script>
