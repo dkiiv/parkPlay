@@ -1,0 +1,6 @@
+node_modules/
+web/generated/
+*.env
+!*.env.example
+*.key
+local.env

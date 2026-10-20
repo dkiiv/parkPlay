@@ -1,0 +1,21 @@
+[Unit]
+Description=TeslaTV kiosk session (Xvfb + PulseAudio + Chrome)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=teslatv
+Group=teslatv
+EnvironmentFile=/etc/teslatv/teslatv.env
+RuntimeDirectory=teslatv
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+ExecStart=/opt/teslatv/deploy/lxc/session.sh
+Restart=always
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=10
+Nice=-2
+
+[Install]
+WantedBy=multi-user.target

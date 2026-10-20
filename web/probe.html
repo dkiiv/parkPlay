@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/favicon.svg">
+<title>TeslaTV - browser probe</title>
+</head>
+<body class="page">
+<div class="card probe">
+  <h1>Tesla browser probe</h1>
+  <p>Run once in <b>Park</b>, then once in <b>Drive</b> (passenger, or on a private road). Start each live test,
+     watch it for ~10 s, then tap <b>Send report</b>. Nothing personal is collected: only API support, screen size,
+     user-agent and the playback results below.</p>
+
+  <div class="row">
+    <button data-label="park" class="lbl primary">Gear: Park</button>
+    <button data-label="drive" class="lbl">Gear: Drive</button>
+  </div>
+
+  <h2>Live tests</h2>
+  <div class="row">
+    <button id="t-video">1. &lt;video&gt; element</button>
+    <button id="t-canvas">2. Canvas (JSMpeg) + WebAudio</button>
+    <button id="t-audio">3. &lt;audio&gt; element</button>
+    <button id="t-tone">4. WebAudio tone</button>
+    <button id="t-stop">Stop all</button>
+  </div>
+  <div class="row">
+    <video id="vid" width="320" height="180" playsinline muted loop src="/probe-clip.mp4"></video>
+    <canvas id="cv" width="320" height="180"></canvas>
+  </div>
+  <p id="live"></p>
+
+  <h2>Input</h2>
+  <div class="row">
+    <input id="kbd" type="text" placeholder="Tap: does the car keyboard appear? Type 'abc'" style="flex:1;height:52px;border:0;border-radius:10px;background:#0d0d0d;padding:0 14px;font-size:18px">
+  </div>
+  <canvas id="touchpad" width="600" height="120" style="width:100%;touch-action:none"></canvas>
+  <p id="touchinfo" class="warn">Drag a finger across the box above.</p>
+
+  <div class="row">
+    <button id="send" class="primary">Send report</button>
+    <span id="sent"></span>
+  </div>
+
+  <h2>Capabilities</h2>
+  <table id="caps"></table>
+</div>
+<script src="/vendor/jsmpeg.min.js"></script>
+<script src="/probe.js"></script>
+</body>
+</html>

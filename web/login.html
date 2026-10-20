@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/favicon.svg">
+<title>TeslaTV - sign in</title>
+</head>
+<body class="page">
+  <form class="card" method="post" action="/login">
+    <h1>TeslaTV</h1>
+    <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">
+    <p class="err" id="err"></p>
+    <button type="submit">Sign in</button>
+  </form>
+  <script>
+    var e = new URLSearchParams(location.search).get('e');
+    if (e) document.getElementById('err').textContent =
+      e === 'locked' ? 'Too many attempts - wait 10 minutes.' : 'Wrong password.';
+  </script>
+</body>
+</html>

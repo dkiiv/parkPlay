@@ -1,0 +1,22 @@
+[Unit]
+Description=TeslaTV web server (stream + input bridge)
+After=teslatv-session.service
+Requires=teslatv-session.service
+PartOf=teslatv-session.service
+
+[Service]
+User=teslatv
+Group=teslatv
+EnvironmentFile=/etc/teslatv/teslatv.env
+WorkingDirectory=/opt/teslatv/server
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/teslatv
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

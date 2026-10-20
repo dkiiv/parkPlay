@@ -1,0 +1,27 @@
+# /etc/nftables.d/teslatv.conf on the public VPS.
+# Forward public TCP 80/443 to the TeslaTV host over a plain WireGuard tunnel (wg-home),
+# NOT the tailnet: video is ~0.7-3 Mbit/s per viewer and would otherwise risk relayed
+# (DERP) tailnet paths. TLS terminates on the home host; the VPS only sees ciphertext.
+#
+# PUBLIC_IF  = the VPS NIC facing the internet (Azure: eth0, inbound daddr = private NIC IP,
+#              so match on interface + port only)
+# WG_IF      = wg-home, VPS side 10.77.0.1, TeslaTV host 10.77.0.2
+table inet teslatv {}
+flush table inet teslatv
+table inet teslatv {
+    chain prerouting_nat {
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "eth0" tcp dport { 80, 443 } counter dnat ip to 10.77.0.2
+    }
+    chain post_routing {
+        # SNAT to the VPS tunnel IP so replies return through wg-home without
+        # policy routing on the home side (home default route stays the home ISP).
+        type nat hook postrouting priority srcnat + 10; policy accept;
+        oifname "wg-home" ip daddr 10.77.0.2 counter snat ip to 10.77.0.1
+    }
+    chain forward_allow {
+        type filter hook forward priority filter + 1; policy accept;
+        iifname "eth0" oifname "wg-home" ip daddr 10.77.0.2 tcp dport { 80, 443 } counter accept
+        iifname "wg-home" oifname "eth0" ct state established,related counter accept
+    }
+}

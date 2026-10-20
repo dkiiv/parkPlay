@@ -1,0 +1,16 @@
+{
+  "name": "teslatv",
+  "version": "0.1.0",
+  "description": "Remote Chrome for the Tesla in-car browser: canvas (JSMpeg) video + touch/keyboard passthrough",
+  "main": "src/index.js",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js",
+    "hash-password": "node src/auth.js hash"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,14 @@
+# /etc/wireguard/wg-home.conf on the public VPS  (mode 600)
+# Private key lives in /etc/wireguard/wg-home.key (wg genkey), loaded by PostUp so this
+# file never holds secrets.
+[Interface]
+Address = 10.77.0.1/24
+ListenPort = 51820
+PostUp = wg set %i private-key /etc/wireguard/wg-home.key
+
+[Peer]
+# TeslaTV host (home side dials in; no Endpoint needed here)
+PublicKey = <TeslaTV host public key: cat /etc/wireguard/wg-tv.pub>
+AllowedIPs = 10.77.0.2/32
+
+# Add further home peers here (e.g. game servers) with their own /32s.

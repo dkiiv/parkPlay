@@ -1,0 +1,11 @@
+# /etc/wireguard/wg-tv.conf on the TeslaTV host  (mode 600)
+[Interface]
+Address = 10.77.0.2/24
+PostUp = wg set %i private-key /etc/wireguard/wg-tv.key
+
+[Peer]
+# public VPS
+PublicKey = <VPS public key: wg pubkey < /etc/wireguard/wg-home.key>
+Endpoint = <vps public ip or name>:51820
+AllowedIPs = 10.77.0.1/32
+PersistentKeepalive = 25

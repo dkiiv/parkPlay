@@ -1,0 +1,26 @@
+# /etc/caddy/Caddyfile on the TeslaTV host.
+# The public VPS forwards TCP 80/443 straight through (DNAT over WireGuard), so TLS
+# terminates HERE: Let's Encrypt HTTP-01 works and the VPS never sees plaintext.
+{
+	email {$TV_ACME_EMAIL}
+}
+
+{$TV_DOMAIN} {
+	@compressible not path /ws/* /audio.mp3
+	encode @compressible zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+	reverse_proxy 127.0.0.1:8090 {
+		flush_interval -1
+	}
+	log {
+		output file /var/log/caddy/teslatv.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="/style.css">
+<title>TeslaTV</title>
+</head>
+<body class="app">
+  <header id="bar">
+    <button id="b-back" title="Back" aria-label="Back">&#x2039;</button>
+    <button id="b-fwd" title="Forward" aria-label="Forward">&#x203A;</button>
+    <button id="b-reload" title="Reload" aria-label="Reload">&#x21BB;</button>
+    <button id="b-home" title="Home" aria-label="Home">&#x2302;</button>
+    <form id="urlform" autocomplete="off">
+      <input id="url" type="text" inputmode="search" enterkeyhint="go" spellcheck="false"
+             autocapitalize="off" autocorrect="off" placeholder="Search YouTube or type a URL">
+    </form>
+    <button id="b-kbd" title="Keyboard" aria-label="Keyboard">&#x2328;</button>
+    <button id="b-mode" title="Touch / mouse input" aria-label="Input mode">&#x261D;</button>
+    <select id="preset" title="Quality" aria-label="Quality">
+      <option value="low">Low</option>
+      <option value="med">Med</option>
+      <option value="high">High</option>
+    </select>
+    <button id="b-full" title="Hide bar" aria-label="Hide bar">&#x2922;</button>
+    <span id="net" title="Connection">&#x25CF;</span>
+  </header>
+
+  <main id="stage">
+    <canvas id="screen"></canvas>
+    <div id="start" class="overlay">
+      <button id="b-start">&#x25B6;&nbsp; Tap to start</button>
+      <p class="hint">Starts video + sound. Passengers / parked only.</p>
+    </div>
+    <div id="status" class="toast hidden"></div>
+  </main>
+
+  <div id="typebar" class="hidden">
+    <input id="typer" type="text" enterkeyhint="send" spellcheck="false" autocapitalize="off"
+           autocorrect="off" autocomplete="off" placeholder="Tap here to type into the page">
+    <button id="t-bksp" aria-label="Backspace">&#x232B;</button>
+    <button id="t-enter" aria-label="Enter">&#x21B5;</button>
+    <button id="t-close" aria-label="Close keyboard">&#x2715;</button>
+  </div>
+
+  <button id="b-showbar" class="hidden" aria-label="Show bar">&#x2630;</button>
+
+  <script src="/vendor/jsmpeg.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
