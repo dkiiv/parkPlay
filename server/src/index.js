@@ -54,6 +54,24 @@ const MIME = {
   '.ts': 'video/mp2t', '.mp4': 'video/mp4', '.mp3': 'audio/mpeg',
 };
 
+// Asset versioning: index.html is served with ?v=<content hash> on every local asset so the
+// Cloudflare edge (UI host is proxied) and the car's cache can never serve a stale app.js/css.
+const crypto = require('crypto');
+function assetVersion() {
+  const h = crypto.createHash('sha1');
+  for (const f of ['app.js', 'style.css', 'vendor/jsmpeg.min.js']) {
+    try { h.update(fs.readFileSync(path.join(WEB, f))); } catch { /* missing */ }
+  }
+  return h.digest('hex').slice(0, 10);
+}
+function sendIndex(res) {
+  const v = assetVersion();
+  let html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
+  html = html.replace(/(href|src)="\/(app\.js|style\.css|vendor\/jsmpeg\.min\.js|manifest\.webmanifest|favicon\.svg)"/g, `$1="/$2?v=${v}"`);
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, max-age=0', 'CDN-Cache-Control': 'no-store' });
+  res.end(html);
+}
+
 function sendFile(res, rel) {
   const file = path.join(WEB, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
   if (!file.startsWith(WEB + path.sep)) { res.writeHead(403); return res.end(); }
@@ -61,7 +79,9 @@ function sendFile(res, rel) {
     if (err) { res.writeHead(404); return res.end('not found'); }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
-      'Cache-Control': rel.startsWith('/vendor/') ? 'public, max-age=86400' : 'no-cache',
+      // Versioned URLs make long caching safe for assets; everything else is never cached.
+      'Cache-Control': 'no-store, max-age=0',
+      'CDN-Cache-Control': 'no-store',
     });
     res.end(data);
   });
@@ -90,9 +110,14 @@ const app = http.createServer(async (req, res) => {
     const who = await auth.verify(req);
     if (!who) return json(res, 403, { error: 'Cloudflare Access login required' });
 
-    if (p === '/' || p === '/index.html') return sendFile(res, '/index.html');
+    if (p === '/' || p === '/index.html') return sendIndex(res);
     if (p === '/api/ticket') {
       return json(res, 200, { ticket: auth.issueTicket(who), stream: `wss://${cfg.streamHost}`, audio: `https://${cfg.streamHost}`, ttl: auth.ticketTtlS, user: who });
+    }
+    if (p === '/api/clientlog' && req.method === 'POST') {
+      const body = await readBody(req, 8 * 1024);
+      log('CLIENT ERROR (' + who + '): ' + body.replace(/\s+/g, ' ').slice(0, 600));
+      res.writeHead(204); return res.end();
     }
     if (p === '/api/status') return json(res, 200, { user: who, chrome: chrome.status(), stream: streamer.status() });
 
@@ -125,7 +150,9 @@ const app = http.createServer(async (req, res) => {
 const wssCtl = new WebSocket.Server({ noServer: true, perMessageDeflate: false });
 app.on('upgrade', async (req, socket, head) => {
   const p = new URL(req.url, 'http://x').pathname;
-  if (p !== '/ws/ctl' || !(await auth.verify(req))) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); return socket.destroy(); }
+  const who = p === '/ws/ctl' ? await auth.verify(req) : null;
+  if (!who) { log(`ctl upgrade rejected path=${p} jwt=${!!auth.tokenFrom(req)}`); socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); return socket.destroy(); }
+  log('ctl connected: ' + who);
   wssCtl.handleUpgrade(req, socket, head, (ws) => wssCtl.emit('connection', ws, req));
 });
 
@@ -152,8 +179,10 @@ stream.on('upgrade', (req, socket, head) => {
   wssVideo.handleUpgrade(req, socket, head, (ws) => wssVideo.emit('connection', ws, req));
 });
 
-wssVideo.on('connection', (ws) => {
-  log(`video viewer connected (${streamer.clients.size + 1})`);
+wssVideo.on('connection', (ws, req) => {
+  const codec = new URL(req.url, 'http://x').searchParams.get('c');
+  if (streamer.clients.size === 0) streamer.setCodec(codec);
+  log(`video viewer connected (${streamer.clients.size + 1}) codec=${streamer.codec}`);
   streamer.addClient(ws);
   ws.on('close', () => log('video viewer left'));
 });
@@ -198,6 +227,7 @@ wssCtl.on('connection', (ws) => {
         case 'nav': await chrome.nav(m.a, m.url); break;
         case 'preset': if (streamer.setPreset(m.p)) broadcastCtl({ t: 'preset', preset: streamer.preset }); break;
         case 'ping': ws.send(JSON.stringify({ t: 'pong', ts: m.ts })); break;
+        case 'hello': log('client hello ' + JSON.stringify(m).slice(0, 400)); break;
         case 'stats': log(`client stats fps=${m.fps} kbps=${m.kbps} bufferMs=${m.delay} queued=${m.queued}`); break;
       }
     } catch (e) {
@@ -216,5 +246,12 @@ setInterval(() => {
 }, 20000);
 
 app.listen(cfg.port, cfg.listen, () => log(`app (Access) listening on ${cfg.listen}:${cfg.port} for ${cfg.publicHost}`));
+// cloudflared's ingress says "localhost", which it may dial as [::1] first: listen there too.
+if (cfg.listen === '127.0.0.1') {
+  const app6 = http.createServer((q, r) => app.emit('request', q, r));
+  app6.on('upgrade', (q, so, h) => app.emit('upgrade', q, so, h));
+  app6.on('error', (e) => log('app [::1] listener: ' + e.message));
+  app6.listen(cfg.port, '::1');
+}
 stream.listen(cfg.streamPort, cfg.listen, () => log(`stream (ticket) listening on ${cfg.listen}:${cfg.streamPort} for ${cfg.streamHost}`));
 process.on('SIGTERM', () => { streamer.stop(); process.exit(0); });

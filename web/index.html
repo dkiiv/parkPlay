@@ -11,7 +11,7 @@
 </head>
 <body class="app">
   <!-- Icons are inline SVG: the Tesla browser lacks many Unicode symbol glyphs (they render as boxes). -->
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M15.4 4.6 8 12l7.4 7.4-1.4 1.4L5.2 12 14 3.2z"/></symbol>
     <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M8.6 19.4 16 12 8.6 4.6 10 3.2l8.8 8.8-8.8 8.8z"/></symbol>
     <symbol id="i-reload" viewBox="0 0 24 24"><path d="M17.7 6.3A8 8 0 1 0 19.7 14h-2.1a6 6 0 1 1-1.4-6.2L13 11h7V4z"/></symbol>
@@ -26,28 +26,28 @@
   </svg>
 
   <header id="bar">
-    <button id="b-back" aria-label="Back"><svg><use href="#i-back"/></svg></button>
-    <button id="b-fwd" aria-label="Forward"><svg><use href="#i-fwd"/></svg></button>
-    <button id="b-reload" aria-label="Reload"><svg><use href="#i-reload"/></svg></button>
-    <button id="b-home" aria-label="Home"><svg><use href="#i-home"/></svg></button>
+    <button id="b-back" aria-label="Back"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-back" xlink:href="#i-back"/></svg></button>
+    <button id="b-fwd" aria-label="Forward"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-fwd" xlink:href="#i-fwd"/></svg></button>
+    <button id="b-reload" aria-label="Reload"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-reload" xlink:href="#i-reload"/></svg></button>
+    <button id="b-home" aria-label="Home"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home" xlink:href="#i-home"/></svg></button>
     <form id="urlform" autocomplete="off">
       <input id="url" type="text" inputmode="search" enterkeyhint="go" spellcheck="false"
              autocapitalize="off" autocorrect="off" placeholder="Search YouTube or type a URL">
     </form>
-    <button id="b-kbd" aria-label="Keyboard"><svg><use href="#i-kbd"/></svg></button>
+    <button id="b-kbd" aria-label="Keyboard"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-kbd" xlink:href="#i-kbd"/></svg></button>
     <select id="preset" aria-label="Quality">
       <option value="low">Low</option>
       <option value="med">Med</option>
       <option value="high">High</option>
     </select>
-    <button id="b-full" aria-label="Hide bar"><svg><use href="#i-full"/></svg></button>
+    <button id="b-full" aria-label="Hide bar"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-full" xlink:href="#i-full"/></svg></button>
     <span id="net" class="net-bad" aria-label="Connection"></span>
   </header>
 
   <main id="stage">
     <canvas id="screen"></canvas>
     <div id="start" class="overlay">
-      <button id="b-start"><svg><use href="#i-play"/></svg><span>Tap to start</span></button>
+      <button id="b-start"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-play" xlink:href="#i-play"/></svg><span>Tap to start</span></button>
       <p class="hint">Starts video + sound. Passengers / parked only.</p>
     </div>
     <div id="status" class="toast hidden"></div>
@@ -56,13 +56,18 @@
   <div id="typebar" class="hidden">
     <input id="typer" type="text" enterkeyhint="send" spellcheck="false" autocapitalize="off"
            autocorrect="off" autocomplete="off" placeholder="Type here - it goes into the page">
-    <button id="t-bksp" aria-label="Backspace"><svg><use href="#i-bksp"/></svg></button>
-    <button id="t-enter" aria-label="Enter"><svg><use href="#i-enter"/></svg></button>
-    <button id="t-close" aria-label="Close keyboard"><svg><use href="#i-close"/></svg></button>
+    <button id="t-bksp" aria-label="Backspace"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bksp" xlink:href="#i-bksp"/></svg></button>
+    <button id="t-enter" aria-label="Enter"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-enter" xlink:href="#i-enter"/></svg></button>
+    <button id="t-close" aria-label="Close keyboard"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-close" xlink:href="#i-close"/></svg></button>
   </div>
 
-  <button id="b-showbar" class="hidden" aria-label="Show bar"><svg><use href="#i-menu"/></svg></button>
+  <button id="b-showbar" class="hidden" aria-label="Show bar"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-menu" xlink:href="#i-menu"/></svg></button>
 
+  <script>
+    window.addEventListener('error', function (e) {
+      try { navigator.sendBeacon('/api/clientlog', JSON.stringify({ msg: String(e.message), src: e.filename, line: e.lineno, col: e.colno, ua: navigator.userAgent })); } catch (x) {}
+    });
+  </script>
   <script src="/vendor/jsmpeg.min.js"></script>
   <script src="/app.js"></script>
 </body>

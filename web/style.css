@@ -58,7 +58,8 @@ body.page { overflow: auto; display: flex; justify-content: center; }
 .probe canvas { background: #111; border-radius: 8px; max-width: 100%; }
 
 /* inline SVG icons (Tesla browser lacks many Unicode symbol glyphs) */
-button svg { width: 26px; height: 26px; fill: currentColor; display: block; margin: auto; }
+button svg { width: 24px; height: 24px; fill: currentColor; display: block; flex: none; pointer-events: none; }
+#bar button, #typebar button, #b-showbar { display: inline-flex; align-items: center; justify-content: center; padding: 0; overflow: hidden; line-height: 0; }
 #b-start { display: flex; align-items: center; gap: 12px; }
 #b-start svg { width: 36px; height: 36px; margin: 0; }
 #net { width: 14px; height: 14px; border-radius: 50%; padding: 0; margin: 0 6px; background: currentColor; display: inline-block; }

@@ -119,7 +119,7 @@
       maxAudioLag: 0.5,
       reconnectInterval: 2,
       pauseWhenHidden: false,
-      onVideoDecode: () => { JB.frames++; },
+      onVideoDecode: () => { JB.frames++; window.__tvFrames = JB.frames; },
     });
     if (player.audioOut && player.audioOut.unlock) player.audioOut.unlock(() => {});
   }
@@ -133,7 +133,15 @@
   // ---------- control socket ----------
   function connectCtl() {
     ctl = new WebSocket(proto + location.host + '/ws/ctl');
-    ctl.onopen = () => { ctlBackoff = 500; setNet('ok'); };
+    ctl.onopen = () => {
+      ctlBackoff = 500; setNet('ok');
+      const caps = { t: 'hello', ua: navigator.userAgent, w: innerWidth, h: innerHeight, dpr: devicePixelRatio, pe: 'PointerEvent' in window, te: 'ontouchstart' in window,
+        webcodecs: 'VideoDecoder' in window, webgl: !!document.createElement('canvas').getContext('webgl'), wasm: typeof WebAssembly === 'object', cores: navigator.hardwareConcurrency };
+      if (caps.webcodecs && VideoDecoder.isConfigSupported) {
+        VideoDecoder.isConfigSupported({ codec: 'avc1.42E01F', optimizeForLatency: true })
+          .then((r) => { caps.h264 = !!r.supported; send(caps); }).catch(() => send(caps));
+      } else send(caps);
+    };
     ctl.onclose = () => {
       setNet('bad');
       if (lastPong && Date.now() - lastPong > 120000) fetch('/api/ticket', { cache: 'no-store' }).then((r) => { if (r.status === 403) location.reload(); }).catch(() => {});

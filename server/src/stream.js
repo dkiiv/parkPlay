@@ -1,5 +1,8 @@
 'use strict';
-// Screen + audio capture -> MPEG-TS (MPEG-1 video + MP2 audio) for JSMpeg.
+// Screen + audio capture -> MPEG-TS for the car.
+//   codec 'mpeg1': MPEG-1 video + MP2 audio, decoded by JSMpeg (works everywhere)
+//   codec 'h264' : H.264 baseline + MP2 audio, video decoded by WebCodecs VideoDecoder when the
+//                  browser has it (far better quality per bit: no smearing/ghosting in motion)
 // ffmpeg runs only while at least one viewer is connected.
 const { spawn } = require('child_process');
 const WebSocket = require('ws');
@@ -9,9 +12,9 @@ const MAX_BUFFERED = 6 * 1024 * 1024; // the client buffers anyway; only drop if
 
 // Output presets. The capture is always the full virtual screen; ffmpeg scales it down.
 const PRESETS = {
-  low: { width: 960, fps: 24, bitrate: 700, maxrate: 1200 },
-  med: { width: 1280, fps: 30, bitrate: 1500, maxrate: 2500 },
-  high: { width: 1920, fps: 30, bitrate: 3000, maxrate: 4500 },
+  low: { width: 960, fps: 30, bitrate: 900, maxrate: 1400, h264: 700 },
+  med: { width: 1280, fps: 30, bitrate: 2000, maxrate: 3000, h264: 1400 },
+  high: { width: 1920, fps: 30, bitrate: 3500, maxrate: 5000, h264: 2600 },
 };
 
 class Streamer {
@@ -27,6 +30,7 @@ class Streamer {
     this.stats = { bytesOut: 0, drops: 0, starts: 0 };
     this.onRestart = () => {};
     this.clockBase = 0; // timestamps only need to be monotonic; the client learns the offset
+    this.codec = 'mpeg1';
   }
 
   outSize() {
@@ -51,11 +55,26 @@ class Streamer {
       // otherwise (measured: 3 fps instead of 30).
       '-vf', `setpts=N/${p.fps}/TB,scale=${w}:${h}:flags=bicubic`,
       '-af', 'asetpts=N/SR/TB',
-      '-c:v', 'mpeg1video', '-b:v', `${p.bitrate}k`, '-maxrate', `${p.maxrate}k`,
-      '-bufsize', `${Math.round(p.maxrate / 2)}k`, '-bf', '0', '-g', String(p.fps * 2),
+      ...(this.codec === 'h264'
+        ? ['-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-profile:v', 'baseline',
+          '-pix_fmt', 'yuv420p', '-b:v', `${p.h264}k`, '-maxrate', `${Math.round(p.h264 * 1.5)}k`,
+          '-bufsize', `${p.h264}k`, '-g', String(p.fps), '-keyint_min', String(p.fps),
+          '-x264-params', 'repeat-headers=1:scenecut=0']
+        // MPEG-1: qmin/qmax keep motion from collapsing into blocks; 1 s GOP so any
+        // corruption heals within a second.
+        : ['-c:v', 'mpeg1video', '-b:v', `${p.bitrate}k`, '-maxrate', `${p.maxrate}k`,
+          '-bufsize', `${p.maxrate}k`, '-qmin', '2', '-qmax', '20', '-bf', '0', '-g', String(p.fps)]),
       '-c:a', 'mp2', '-b:a', '128k', '-ar', '44100', '-ac', '2',
       '-f', 'mpegts', '-muxdelay', '0.001', 'pipe:1',
     ];
+  }
+
+  setCodec(c) {
+    c = c === 'h264' ? 'h264' : 'mpeg1';
+    if (c === this.codec) return false;
+    this.codec = c;
+    if (this.proc) this.restart();
+    return true;
   }
 
   setPreset(name) {
@@ -83,7 +102,7 @@ class Streamer {
   start() {
     if (this.proc) return;
     const args = this.args();
-    this.log(`ffmpeg start preset=${this.preset} out=${JSON.stringify(this.outSize())}`);
+    this.log(`ffmpeg start codec=${this.codec} preset=${this.preset} out=${JSON.stringify(this.outSize())}`);
     this.stats.starts++;
     this.leftover = Buffer.alloc(0);
     const proc = spawn(this.cfg.ffmpeg, args, {
@@ -133,7 +152,9 @@ class Streamer {
     const out = Buffer.concat([hdr, buf.subarray(0, usable)]);
     for (const ws of this.clients) {
       if (ws.readyState !== WebSocket.OPEN) continue;
-      if (ws.bufferedAmount > MAX_BUFFERED) { this.stats.drops++; continue; }
+      // Never drop part of the stream (that smears video until the next keyframe). A viewer this
+      // far behind is cut off and reconnects cleanly.
+      if (ws.bufferedAmount > MAX_BUFFERED) { this.stats.drops++; ws.terminate(); continue; }
       ws.send(out, { binary: true });
       this.stats.bytesOut += out.length;
     }
@@ -157,7 +178,7 @@ class Streamer {
   }
 
   status() {
-    return { running: !!this.proc, viewers: this.clients.size, preset: this.preset, out: this.outSize(), ...this.stats };
+    return { running: !!this.proc, viewers: this.clients.size, preset: this.preset, codec: this.codec, out: this.outSize(), ...this.stats };
   }
 }
 

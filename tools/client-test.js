@@ -38,7 +38,11 @@ srv.on('upgrade', (req, sock, head) => {
 // listener rejects any other Origin by design).
 wssVid.on('connection', (client, req) => {
   const up = new WebSocket('ws://127.0.0.1:8091' + req.url, { headers: { Origin: `https://${process.env.TV_PUBLIC_HOST}` } });
-  up.on('message', (d) => { if (client.readyState === 1) client.send(d, { binary: true }); });
+  // BURST_MS>0 simulates LTE: hold messages and release them in clumps every BURST_MS ms
+  const BURST = Number(process.env.BURST_MS || 0);
+  let held = [];
+  if (BURST) setInterval(() => { for (const d of held) if (client.readyState === 1) client.send(d, { binary: true }); held = []; }, BURST);
+  up.on('message', (d) => { if (BURST) held.push(d); else if (client.readyState === 1) client.send(d, { binary: true }); });
   up.on('close', () => client.close());
   up.on('error', (e) => { console.log('upstream error', e.message); client.close(); });
   client.on('close', () => up.close());
@@ -66,7 +70,14 @@ srv.listen(PORT, '127.0.0.1', async () => {
   await new Promise((r) => setTimeout(r, 2000));
   console.log('icons rendered as svg:', await ev(`document.querySelectorAll('#bar button svg use').length`));
   await ev(`document.getElementById('b-start').click(), true`);
-  await new Promise((r) => setTimeout(r, SECS * 1000));
+  const samples = [];
+  let lastF = 0;
+  for (let i = 0; i < SECS / 2; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const f = await ev(`(window.__tvFrames||0)`);
+    samples.push(+((f - lastF) / 2).toFixed(1)); lastF = f;
+  }
+  console.log('fps per 2s window:', JSON.stringify(samples.slice(2)));
   // stats are posted every 10 s by the client
   console.log('client stats:', JSON.stringify(stats));
   chrome.kill('SIGKILL');
