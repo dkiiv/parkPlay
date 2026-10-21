@@ -1,8 +1,16 @@
 # TeslaTV
 
-A remote Chrome for the Tesla in-car browser. Browse YouTube (or anything) on a real
-desktop Chrome running on your own server, and watch it on the car screen as a canvas
-video stream with touch and keyboard passthrough.
+YouTube for the Tesla in-car browser, self-hosted. A local, touch-first YouTube-style UI
+(home, subscriptions, history, watch later, search) that plays videos at YouTube's own
+quality by decoding H.264/AAC in the browser with **WebCodecs** onto a `<canvas>`, so it keeps
+playing in Drive. Your server resolves and proxies the media. A remote Chrome (the original
+v1 design, described below) is kept for the one-time Google sign-in.
+
+**v2 native player (current):** `web/index.html` + `app.js` (UI), `web/player.js` +
+`web/fmp4.js` (DASH fMP4 demux, VideoDecoder → canvas, AudioDecoder → Web Audio, audio-clock
+sync), `server/src/yt.js` (yt-dlp feeds/search/resolve), `server/src/media.js` (ticketed
+byte-range proxy with a disk cache). The browser must support WebCodecs (it is detected at runtime).
+Tests: `tools/api-test.js` (player) and `tools/ui-test.js` (whole UI by touch).
 
 Built for a 2025 Model 3 (HW4 / AMD Ryzen MCU, 16" retrofit screen), but nothing in it is
 car-specific: any browser with WebSocket + canvas + WebAudio works.
@@ -14,7 +22,7 @@ car-specific: any browser with WebSocket + canvas + WebAudio works.
 ## Why this exists
 
 The Tesla browser pauses every `<video>` element at the OS level when the car is in
-Drive, and it has no WebRTC or WebCodecs. Hosted services (TeslaPlay, etc.) get around
+Drive. WebRTC and WebCodecs support varies by MCU and firmware (newer AMD cars have WebCodecs). Hosted services (TeslaPlay, etc.) get around
 this by sending video as data and drawing it on a `<canvas>`. TeslaTV does the same, but
 instead of a curated link list it streams **a whole browser**, so you get the real YouTube
 UI, your account, subscriptions, search, comments, and everything else.
@@ -51,17 +59,18 @@ UI, your account, subscriptions, search, comments, and everything else.
 
 | Path | What |
 |---|---|
-| `server/` | Node server: two localhost listeners. APP (`:8090`, behind Access): UI, `/ws/ctl`, `/api/ticket`, `/probe`. STREAM (`:8091`, direct): `/ws/video`, `/audio.mp3` |
+| `server/` | Node server: two localhost listeners. APP (`:8090`, behind Access): UI, `/api/*`, `/ws/ctl`, `/probe`. STREAM (`:8091`, direct): `/media/*`, `/ws/video`, `/audio.mp3` |
 | `server/src/stream.js` | ffmpeg capture/encode pipeline + fan-out to viewers |
 | `server/src/cdp.js` | Chrome DevTools Protocol bridge (touch, mouse, keys, nav, single-tab kiosk) |
 | `server/src/access.js` | Cloudflare Access JWT verification (RS256 against your team's certs) + HMAC stream tickets |
-| `web/` | Car-side client (`index.html`, `app.js`), capability probe |
+| `web/` | v2 car UI (`index.html`, `app.js`, `player.js`, `fmp4.js`); v1 remote-browser client used for sign-in (`signin.html`, `signin.js`); capability probe |
+| `server/src/yt.js`, `server/src/media.js` | v2: yt-dlp data/resolve; media byte-range proxy + 1 MiB chunk cache (`/media/<id>/<itag>?t=` on the STREAM listener) |
 | `web/vendor/jsmpeg.min.js` | JSMpeg (MIT, vendored) |
 | `deploy/lxc/` | `install.sh`, `session.sh` (Xvfb + Pulse + Chrome), Caddyfile, env example |
 | `deploy/systemd/` | `teslatv-session.service`, `teslatv-web.service`, `cloudflared-teslatv.service` |
 | `deploy/vps/` | WireGuard + nftables DNAT for a public front-door VPS |
 | `docs/` | Architecture, networking/bandwidth, troubleshooting |
-| `tools/` | `e2e-access.js` (end-to-end test with an Access service token), `client-test.js` (headless client: fps / kbit/s / buffer), `measure.sh` (kiosk dropped-frame check), `push.sh` (deploy), `cdp-eval.js` (debug) |
+| `tools/` | `api-test.js` (v2 player end-to-end), `ui-test.js` (v2 UI by touch), `e2e-access.js` (end-to-end test with an Access service token), `client-test.js` (headless client: fps / kbit/s / buffer), `measure.sh` (kiosk dropped-frame check), `push.sh` (deploy), `cdp-eval.js` (debug) |
 
 ## Authentication: Cloudflare Access, with video kept off Cloudflare
 
@@ -114,6 +123,12 @@ Cloudflare Tunnel for the video).
 
 ## Using it in the car
 
+v2: tap a thumbnail to play it. Tap the video to show the controls (back, −10 s, play/pause,
++10 s, seek bar, quality, fullscreen). Account → Sign in with Google opens the v1 remote browser
+once, so your feeds become personal.
+
+v1 remote browser (sign-in page):
+
 | Control | What it does |
 |---|---|
 | ‹ › ↻ ⌂ | Back, forward, reload, home (YouTube) |
@@ -129,7 +144,7 @@ YouTube keyboard shortcuts work with a Bluetooth keyboard (k = play/pause, f = f
 - No app password: identity comes from Cloudflare Access, and the origin re-verifies the
   Access JWT itself, so a misrouted request that skips Access still gets 403. The UI listener
   binds to `127.0.0.1` and is only reachable through cloudflared.
-- The stream host only serves `/ws/video` and `/audio.mp3`, both gated by an HMAC ticket that
+- The stream host only serves `/media/*`, `/ws/video` and `/audio.mp3`, all gated by an HMAC ticket that
   expires (default 12 h). The ticket can't be used to control the browser.
 - Chrome's DevTools port listens on `127.0.0.1` only. The node server and Chrome run as
   the unprivileged `teslatv` user, and node runs under systemd sandboxing.

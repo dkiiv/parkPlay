@@ -6,6 +6,11 @@
 //          stream hostname. Only /ws/video and /audio.mp3, gated by a short-lived HMAC ticket
 //          that the APP side hands out after Access auth. Video never touches Cloudflare.
 const fs = require('fs');
+// Outbound (googlevideo, YouTube): many hosts without a working IPv6 route still get AAAA
+// answers, and Node's happy-eyeballs gives each address only 250 ms, so a slow-but-fine IPv4
+// connect to a googlevideo edge fails with ETIMEDOUT. Prefer IPv4 and give each attempt 2 s.
+require('dns').setDefaultResultOrder(process.env.TV_DNS_ORDER || 'ipv4first');
+require('net').setDefaultAutoSelectFamilyAttemptTimeout(Number(process.env.TV_CONNECT_ATTEMPT_MS || 2000));
 const path = require('path');
 const http = require('http');
 const { URL } = require('url');
@@ -13,6 +18,8 @@ const WebSocket = require('ws');
 const { AccessAuth } = require('./access');
 const { Streamer } = require('./stream');
 const { Chrome } = require('./cdp');
+const { YT } = require('./yt');
+const { Media } = require('./media');
 
 const env = process.env;
 const cfg = {
@@ -46,6 +53,8 @@ auth.refreshKeys().catch((e) => log('access key fetch failed (will retry): ' + e
 const streamer = new Streamer(cfg, log);
 const chrome = new Chrome({ port: cfg.cdpPort, homeUrl: cfg.homeUrl, log });
 chrome.connect();
+const yt = new YT({ ytdlp: env.TV_YTDLP || 'yt-dlp', stateDir: env.TV_STATE_DIR || '/var/lib/teslatv', chrome, log });
+const media = new Media({ yt, cacheDir: path.join(env.TV_STATE_DIR || '/var/lib/teslatv', 'media'), maxBytes: Number(env.TV_CACHE_GB || 6) * 1e9, log });
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
@@ -59,15 +68,15 @@ const MIME = {
 const crypto = require('crypto');
 function assetVersion() {
   const h = crypto.createHash('sha1');
-  for (const f of ['app.js', 'style.css', 'vendor/jsmpeg.min.js']) {
+  for (const f of ['app.js', 'player.js', 'fmp4.js', 'signin.js', 'style.css', 'vendor/jsmpeg.min.js']) {
     try { h.update(fs.readFileSync(path.join(WEB, f))); } catch { /* missing */ }
   }
   return h.digest('hex').slice(0, 10);
 }
-function sendIndex(res) {
+function sendIndex(res, file = 'index.html') {
   const v = assetVersion();
-  let html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
-  html = html.replace(/(href|src)="\/(app\.js|style\.css|vendor\/jsmpeg\.min\.js|manifest\.webmanifest|favicon\.svg)"/g, `$1="/$2?v=${v}"`);
+  let html = fs.readFileSync(path.join(WEB, file), 'utf8');
+  html = html.replace(/(href|src)="\/([\w/.-]+\.(?:js|css|svg|webmanifest))"/g, `$1="/$2?v=${v}"`);
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, max-age=0', 'CDN-Cache-Control': 'no-store' });
   res.end(html);
 }
@@ -95,6 +104,15 @@ function readBody(req, limit = 64 * 1024) {
   });
 }
 
+// Pull the first `chunks` MiB of the formats the player will most likely pick (<=720p H.264, best
+// AAC) into the server cache. Same choice as player.js chooseFormats() with default options.
+function warmMedia(d, chunks) {
+  const v30 = d.video.filter((f) => f.height <= 720 && (f.fps || 30) <= 31);
+  const v = v30.pop() || d.video.filter((f) => f.height <= 720).pop() || d.video[0];
+  media.readAhead(d.id, v.itag, 0, v.size, chunks);
+  media.readAhead(d.id, d.audio[0].itag, 0, d.audio[0].size, chunks);
+}
+
 function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(obj));
@@ -111,6 +129,33 @@ const app = http.createServer(async (req, res) => {
     if (!who) return json(res, 403, { error: 'Cloudflare Access login required' });
 
     if (p === '/' || p === '/index.html') return sendIndex(res);
+    if (p === '/signin') return sendIndex(res, 'signin.html');
+
+    // ---- YouTube data (local UI) ----
+    if (p === '/api/feed') {
+      const kind = u.searchParams.get('kind') || 'home';
+      try { const d = await yt.list(kind, u.searchParams.get('q') || ''); yt.prefetch(d.items, 4, (m) => warmMedia(m, 1)); return json(res, 200, d); }
+      catch (e) { log(`feed ${kind}: ${e.message}`); return json(res, 502, { error: e.message }); }
+    }
+    if (p.startsWith('/api/video/')) {
+      const id = p.slice('/api/video/'.length);
+      try {
+        const d = await yt.resolve(id);
+        // warm the server cache so the first bytes are local by the time the car asks
+        warmMedia(d, 8);
+        return json(res, 200, YT.publicMeta(d));
+      } catch (e) { log(`resolve ${id}: ${e.message}`); return json(res, 502, { error: e.message }); }
+    }
+    if (p === '/api/account') { await yt.exportCookies(); return json(res, 200, { signedIn: yt.signedIn, user: who }); }
+    if (p === '/api/account/cookies' && req.method === 'POST') {
+      try { yt.saveUploadedCookies(await readBody(req, 2 * 1024 * 1024)); return json(res, 200, { ok: true }); }
+      catch (e) { return json(res, 400, { error: e.message }); }
+    }
+    if (p === '/api/account/signout' && req.method === 'POST') { await yt.signOut(); return json(res, 200, { ok: true }); }
+    if (p === '/api/stats' && req.method === 'POST') {
+      log('player stats: ' + (await readBody(req, 4096)).replace(/\s+/g, ' ').slice(0, 400));
+      res.writeHead(204); return res.end();
+    }
     if (p === '/api/ticket') {
       return json(res, 200, { ticket: auth.issueTicket(who), stream: `wss://${cfg.streamHost}`, audio: `https://${cfg.streamHost}`, ttl: auth.ticketTtlS, user: who });
     }
@@ -165,9 +210,37 @@ function streamAllowed(req) {
   return auth.checkTicket(u.searchParams.get('t'));
 }
 
-const stream = http.createServer((req, res) => {
+async function serveMedia(req, res, p) {
+  res.setHeader('Access-Control-Allow-Origin', `https://${cfg.publicHost}`);
+  res.setHeader('Access-Control-Allow-Headers', 'Range');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+  res.setHeader('Vary', 'Origin');
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+  if (!streamAllowed(req)) { res.writeHead(403); return res.end(); }
+  const [, , id, itag] = p.split('/');
+  const f = await yt.format(id, itag).catch(() => null);
+  if (!f) { res.writeHead(404); return res.end(); }
+  const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
+  const start = m ? Number(m[1]) : 0;
+  // open-ended ranges (the <audio> element) get 2 MiB at a time so playback starts fast
+  const end = m && m[2] ? Number(m[2]) : start + 2 * 1024 * 1024 - 1;
+  if (start >= f.size) { res.writeHead(416, { 'Content-Range': `bytes */${f.size}` }); return res.end(); }
+  const { buf, size } = await media.read(id, itag, start, end);
+  res.writeHead(206, {
+    'Content-Type': /^mp4a/.test(f.codec || '') ? 'audio/mp4' : 'video/mp4',
+    'Content-Range': `bytes ${start}-${start + buf.length - 1}/${size}`,
+    'Content-Length': buf.length, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600',
+  });
+  res.end(buf);
+}
+
+const stream = http.createServer(async (req, res) => {
   const p = new URL(req.url, 'http://x').pathname;
   if (p === '/healthz') return json(res, 200, { ok: true });
+  if (p.startsWith('/media/')) {
+    try { return await serveMedia(req, res, p); }
+    catch (e) { log(`media ${p}: ${e.message}${e.cause ? ' (' + (e.cause.code || e.cause.message) + ')' : ''}`); if (!res.headersSent) res.writeHead(502); return res.end(); }
+  }
   if (p === '/audio.mp3' && streamAllowed(req)) return streamer.audioStream(res);
   res.writeHead(403); res.end();
 });

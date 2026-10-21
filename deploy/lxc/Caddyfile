@@ -13,7 +13,7 @@
 		Referrer-Policy no-referrer
 		-Server
 	}
-	@media path /ws/video /audio.mp3 /healthz
+	@media path /ws/video /audio.mp3 /healthz /media/*
 	handle @media {
 		reverse_proxy 127.0.0.1:8091 {
 			flush_interval -1

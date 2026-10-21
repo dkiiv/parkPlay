@@ -63,3 +63,69 @@ button svg { width: 24px; height: 24px; fill: currentColor; display: block; flex
 #b-start { display: flex; align-items: center; gap: 12px; }
 #b-start svg { width: 36px; height: 36px; margin: 0; }
 #net { width: 14px; height: 14px; border-radius: 50%; padding: 0; margin: 0 6px; background: currentColor; display: inline-block; }
+
+.donebtn { height: 44px; padding: 0 18px; border-radius: 10px; background: #e82127; color: #fff; text-decoration: none; display: inline-flex; align-items: center; font-weight: 600; }
+
+/* =================== TeslaTV local UI =================== */
+body.tv { background: #0f0f0f; overflow: hidden; }
+body.tv svg { fill: currentColor; flex: none; pointer-events: none; }
+#browse { position: fixed; inset: 0; display: flex; }
+#rail { width: 96px; background: #0f0f0f; display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 6px; border-right: 1px solid #222; }
+#rail .logo { margin-bottom: 10px; }
+#rail .tab { width: 84px; height: 72px; border: 0; border-radius: 14px; background: transparent; color: #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 13px; }
+#rail .tab.active { background: #272727; color: #fff; }
+#rail .spacer { flex: 1; }
+#main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 22px 40px; overscroll-behavior: contain; }
+#searchbar { display: flex; align-items: center; gap: 10px; background: #222; border-radius: 28px; height: 56px; padding: 0 20px; max-width: 760px; color: #aaa; }
+#q { flex: 1; height: 100%; border: 0; background: transparent; color: #fff; font-size: 20px; outline: none; }
+#feed-title { margin: 18px 2px 12px; font-size: 22px; font-weight: 600; }
+#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px 18px; }
+.card { cursor: pointer; }
+.card .thumb { position: relative; aspect-ratio: 16/9; background: #222; border-radius: 12px; overflow: hidden; }
+.card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .dur { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.85); padding: 2px 6px; border-radius: 5px; font-size: 14px; font-weight: 600; }
+.card .dur.live { background: #e82127; }
+.card .title { margin-top: 10px; font-size: 17px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .meta { margin-top: 4px; font-size: 14px; color: #aaa; }
+.card .chan { padding: 6px 0; }
+.card:active .thumb { opacity: .7; }
+.card.sk .thumb { animation: pulse 1.2s infinite; }
+.card.sk .l1, .card.sk .l2 { height: 14px; background: #222; border-radius: 6px; margin-top: 10px; }
+.card.sk .l2 { width: 60%; }
+@keyframes pulse { 50% { opacity: .5; } }
+#feed-msg { padding: 40px 0; color: #aaa; font-size: 18px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; height: 52px; padding: 0 24px; border-radius: 26px; border: 0; background: #272727; color: #fff; font-size: 17px; text-decoration: none; margin: 6px 6px 6px 0; }
+.btn.primary { background: #e82127; }
+.btn.inline { margin-left: 12px; }
+
+#watch { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; }
+#stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; }
+#stage canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+#overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(rgba(0,0,0,.65), transparent 22%, transparent 70%, rgba(0,0,0,.75)); opacity: 0; transition: opacity .2s; pointer-events: none; }
+#overlay.show { opacity: 1; pointer-events: auto; }
+#ov-top { display: flex; align-items: center; gap: 12px; padding: 14px 18px; }
+#w-title { font-size: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ov-mid { display: flex; align-items: center; justify-content: center; gap: 70px; }
+#ov-bot { display: flex; align-items: center; gap: 14px; padding: 10px 20px 18px; font-variant-numeric: tabular-nums; font-size: 16px; }
+.ic { border: 0; background: transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; padding: 0; }
+.ic.big { width: 84px; height: 84px; background: rgba(0,0,0,.35); }
+.ic.huge { width: 112px; height: 112px; background: rgba(0,0,0,.45); }
+.ic:active { background: rgba(255,255,255,.2); }
+#seek { position: relative; flex: 1; height: 40px; display: flex; align-items: center; touch-action: none; }
+#seek::before { content: ''; position: absolute; left: 0; right: 0; height: 6px; background: rgba(255,255,255,.25); border-radius: 3px; }
+#seek-buf, #seek-fill { position: absolute; left: 0; height: 6px; border-radius: 3px; }
+#seek-buf { background: rgba(255,255,255,.45); }
+#seek-fill { background: #e82127; }
+#seek-knob { position: absolute; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: #e82127; }
+#w-q { height: 44px; border: 0; border-radius: 10px; background: rgba(40,40,40,.9); color: #fff; font-size: 16px; padding: 0 10px; }
+#w-info { display: flex; justify-content: space-between; padding: 10px 20px; color: #aaa; font-size: 15px; background: #0f0f0f; }
+body.full #w-info { display: none; }
+#spinner { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 14px; color: #ddd; font-size: 17px; pointer-events: none; }
+#spinner .ring { width: 56px; height: 56px; border: 5px solid rgba(255,255,255,.2); border-top-color: #e82127; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#sheet { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.sheet-card { width: min(560px, 92vw); background: #1f1f1f; border-radius: 18px; padding: 26px; }
+.sheet-card h3 { margin: 0 0 10px; font-size: 22px; }
+.sheet-card .small { color: #aaa; font-size: 14px; }
+#toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #2a2a2a; padding: 12px 20px; border-radius: 12px; z-index: 30; font-size: 16px; }
