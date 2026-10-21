@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/style.css">
-<title>TeslaTV</title>
+<title>ParkPlay</title>
 <script>
   window.addEventListener('error', function (e) {
     try { navigator.sendBeacon('/api/clientlog', JSON.stringify({ msg: String(e.message), src: e.filename, line: e.lineno, col: e.colno })); } catch (x) {}
@@ -40,7 +40,7 @@
   <!-- ===== browse view ===== -->
   <section id="browse">
     <nav id="rail">
-      <div class="logo"><svg width="34" height="34" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#e82127"/><path d="M26 20v24l20-12z" fill="#fff"/></svg></div>
+      <div class="logo"><svg width="34" height="34" viewBox="0 0 64 64" aria-label="ParkPlay"><rect width="64" height="64" rx="14" fill="#1e293b"/><path d="M19 13h15a14 14 0 0 1 0 28h-6v10h-9z" fill="#14b8a6"/><path d="M29 20v14l11-7z" fill="#1e293b"/></svg></div>
       <button class="tab active" data-kind="home"><svg width="26" height="26"><use href="#i-home"/></svg><span>Home</span></button>
       <button class="tab" data-kind="subs"><svg width="26" height="26"><use href="#i-subs"/></svg><span>Subs</span></button>
       <button class="tab" data-kind="history"><svg width="26" height="26"><use href="#i-hist"/></svg><span>History</span></button>

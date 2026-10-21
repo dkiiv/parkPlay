@@ -235,7 +235,8 @@ class Chrome extends EventEmitter {
     if (action === 'forward') return this.history(1);
     if (action === 'reload') return this.send('Page.reload', {}, sid);
     if (action === 'home') return this.send('Page.navigate', { url: this.homeUrl }, sid);
-    if (action === 'go' && url) return this.send('Page.navigate', { url: toUrl(url) }, sid);
+    // The remote browser exists only to sign in to Google/YouTube: refuse other destinations.
+    if (action === 'go' && url) { const u = toUrl(url); if (signinAllowed(u)) return this.send('Page.navigate', { url: u }, sid); }
   }
 
   async history(delta) {
@@ -246,6 +247,14 @@ class Chrome extends EventEmitter {
   }
 }
 
+// Hosts the sign-in browser may be sent to (Google account sign-in and YouTube).
+function signinAllowed(u) {
+  try {
+    const h = new URL(u).hostname;
+    return new URL(u).protocol === 'https:' && /(^|\.)(google\.com|youtube\.com|gstatic\.com)$/.test(h);
+  } catch { return false; }
+}
+
 // Bare words become a YouTube search; anything URL-ish is opened directly.
 function toUrl(input) {
   const s = String(input).trim();
@@ -254,4 +263,4 @@ function toUrl(input) {
   return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s);
 }
 
-module.exports = { Chrome, toUrl };
+module.exports = { Chrome, toUrl, signinAllowed };

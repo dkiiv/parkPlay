@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Headless client test (run ON the host as root/teslatv): serves web/ on 127.0.0.1:8099 with a
+// Headless client test (run ON the host as root/parkplay): serves web/ on 127.0.0.1:8099 with a
 // stub /api/ticket (signed with the real TV_SECRET) and a stub /ws/ctl, opens it in a separate
 // headless Chrome, clicks Start, and reports decoded fps, kbit/s and the jitter-buffer delay.
 // The real stream listener (:8091) is used, so this exercises framing + buffering end to end.
-//   sudo -u teslatv env $(cat /etc/teslatv/teslatv.env | xargs) node tools/client-test.js [secs]
+//   sudo -u parkplay env $(cat /etc/parkplay/parkplay.env | xargs) node tools/client-test.js [secs]
 'use strict';
 const http = require('http');
 const fs = require('fs');

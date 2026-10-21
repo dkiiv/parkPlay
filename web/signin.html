@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="/style.css">
-<title>TeslaTV - YouTube sign-in</title>
+<title>ParkPlay - YouTube sign-in</title>
 </head>
 <body class="app">
   <!-- Icons are inline SVG: the Tesla browser lacks many Unicode symbol glyphs (they render as boxes). -->
@@ -27,11 +27,12 @@
   </svg>
 
   <header id="bar">
+    <span class="bartitle">Sign in to YouTube</span>
     <button id="b-back" aria-label="Back"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-back" xlink:href="#i-back"/></svg></button>
-    <button id="b-fwd" aria-label="Forward"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-fwd" xlink:href="#i-fwd"/></svg></button>
+    <button id="b-fwd" hidden aria-label="Forward"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-fwd" xlink:href="#i-fwd"/></svg></button>
     <button id="b-reload" aria-label="Reload"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-reload" xlink:href="#i-reload"/></svg></button>
-    <button id="b-home" aria-label="Home"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home" xlink:href="#i-home"/></svg></button>
-    <form id="urlform" autocomplete="off">
+    <button id="b-home" hidden aria-label="Home"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home" xlink:href="#i-home"/></svg></button>
+    <form id="urlform" autocomplete="off" hidden>
       <input id="url" type="text" inputmode="search" enterkeyhint="go" spellcheck="false"
              autocapitalize="off" autocorrect="off" placeholder="Search YouTube or type a URL">
     </form>
@@ -50,7 +51,7 @@
     <canvas id="screen"></canvas>
     <div id="start" class="overlay">
       <button id="b-start"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-play" xlink:href="#i-play"/></svg><span>Tap to start</span></button>
-      <p class="hint">Sign in to YouTube once in this remote browser. Your account then appears in TeslaTV. Tap Done when finished.</p>
+      <p class="hint">Sign in to YouTube once in this remote browser. Your account then appears in ParkPlay. Tap Done when finished.</p>
     </div>
     <div id="status" class="toast hidden"></div>
   </main>

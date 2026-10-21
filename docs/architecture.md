@@ -1,10 +1,10 @@
 # Architecture
 
-TeslaTV has two parts:
+ParkPlay has two parts:
 
 - **v2 native player (the main app).** A local YouTube-style UI in the car that decodes YouTube's
   own H.264/AAC with WebCodecs. The server only supplies JSON and media bytes.
-- **v1 remote browser (sign-in only).** A Chrome kiosk on the server, streamed to the car as
+- **sign-in browser (from v1).** A Chrome kiosk on the server, streamed to the car as
   MPEG-1 and controlled by touch. It is used once to sign in to Google/YouTube at `/signin`.
 
 ## Components
@@ -49,8 +49,8 @@ or `CF_Authorization` cookie); otherwise 403.
 | `/api/ticket` | GET | Stream ticket (HMAC, `TV_TICKET_TTL_S`, default 12 h) and stream host |
 | `/api/stats`, `/api/clientlog` | POST | Player stats and client JS errors, written to the server log |
 | `/api/status` | GET | Kiosk + v1 encoder status |
-| `/signin` | GET | v1 remote-browser client |
-| `/ws/ctl` | WebSocket | v1 control channel (touch, keys, navigation, client hello/stats) |
+| `/signin` | GET | sign-in client |
+| `/ws/ctl` | WebSocket | sign-in page control channel (touch, keys, back/reload; navigation limited to Google/YouTube) |
 | `/probe`, `/probe/report`, `/api/probes` | GET/POST | Browser capability probe and stored reports |
 | `/healthz` | GET | Liveness, no auth |
 
@@ -72,9 +72,12 @@ Caddy (`deploy/lxc/Caddyfile`) forwards only these paths; its `@media` matcher *
 - Formats: H.264 (avc1) video-only DASH and AAC (mp4a, itag 140) DASH audio, both fragmented
   MP4. `fmp4.js` parses `moov`/`sidx` for the segment index and `moof`/`mdat` for samples.
 - Prefers <= 30 fps (60 fps doubles decode and paint cost), 720p by default, user-selectable
-  360p-1080p. If decoding falls behind, the app steps down one quality level for that video.
+  360p-1080p. If the decoder falls behind (frames decoded after their display time in two consecutive 15 s
+  windows), the app steps down one quality level for that video.
 - Read-ahead about 120 s / 80 MB; audio is scheduled only ~3 s ahead so seek and pause stay cheap.
-- `VideoDecoder` is configured with `prefer-hardware` when supported, otherwise software.
+- `VideoDecoder` is configured with `hardwareAcceleration: 'no-preference'` (the browser picks,
+  hardware where available) and falls back to `prefer-software` if that config is unsupported.
+- At most 8 decoded frames are held (hardware decoders have small output pools).
 - The render loop stops at `ended` and restarts on seek/replay. `currentTime()` is clamped to the
   duration.
 
@@ -93,11 +96,13 @@ Typical tap-to-first-frame measured with `tools/ui-test.js` on a cold cache: abo
 the first result after a few seconds of browsing, 2-5 s for a card scrolled into view, and
 3-7 s fully cold (about 3 s of that is the yt-dlp resolve).
 
-## Sign-in (v1 remote browser)
+## Sign-in (sign-in browser)
 
-`teslatv-session.service` runs `deploy/lxc/session.sh`: Xvfb (`:99`, 1920x1200), a PulseAudio
+`parkplay-session.service` runs `deploy/lxc/session.sh`: Xvfb (`:99`, 1920x1200), a PulseAudio
 null sink, and Google Chrome in kiosk mode with DevTools on `127.0.0.1:9222` and a persistent
-profile in `/var/lib/teslatv/chrome-profile`. uBlock Origin Lite is loaded if present.
+profile in `/var/lib/parkplay/chrome-profile`. uBlock Origin Lite is loaded if present. It opens
+`TV_HOME_URL` (Google sign-in for YouTube). The server refuses navigation to anything other than
+HTTPS google.com / youtube.com / gstatic.com pages, and the sign-in page has no address bar.
 
 When the car opens `/signin`, ffmpeg captures the screen and sink and sends MPEG-1 + MP2 in
 MPEG-TS over `/ws/video`; JSMpeg decodes it into a canvas. Taps and drags go back over `/ws/ctl`
@@ -110,5 +115,5 @@ writes `TV_STATE_DIR/cookies.txt` (mode 600), which yt-dlp uses for personal fee
 
 ## Configuration
 
-All settings are environment variables in `/etc/teslatv/teslatv.env`; see
-`deploy/lxc/teslatv.env.example` for the full list with defaults.
+All settings are environment variables in `/etc/parkplay/parkplay.env`; see
+`deploy/lxc/parkplay.env.example` for the full list with defaults.

@@ -1,16 +1,16 @@
 [Unit]
-Description=TeslaTV kiosk session (Xvfb + PulseAudio + Chrome, used for sign-in)
+Description=ParkPlay kiosk session (Xvfb + PulseAudio + Chrome, used for sign-in)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=teslatv
-Group=teslatv
-EnvironmentFile=/etc/teslatv/teslatv.env
-RuntimeDirectory=teslatv
+User=parkplay
+Group=parkplay
+EnvironmentFile=/etc/parkplay/parkplay.env
+RuntimeDirectory=parkplay
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
-ExecStart=/opt/teslatv/deploy/lxc/session.sh
+ExecStart=/opt/parkplay/deploy/lxc/session.sh
 Restart=always
 RestartSec=3
 KillMode=control-group

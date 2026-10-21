@@ -1,0 +1,21 @@
+[Unit]
+Description=ParkPlay web server (UI/API, media proxy, sign-in stream)
+After=parkplay-session.service
+Wants=parkplay-session.service
+
+[Service]
+User=parkplay
+Group=parkplay
+EnvironmentFile=/etc/parkplay/parkplay.env
+WorkingDirectory=/opt/parkplay/server
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/parkplay
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

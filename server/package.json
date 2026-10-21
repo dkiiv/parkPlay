@@ -1,5 +1,5 @@
 {
-  "name": "teslatv",
+  "name": "parkplay",
   "version": "0.1.0",
   "description": "Self-hosted YouTube player for the Tesla in-car browser: WebCodecs canvas playback, yt-dlp backend, ticketed media proxy",
   "author": "dkiiv (https://github.com/dkiiv)",

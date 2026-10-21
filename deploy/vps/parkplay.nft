@@ -1,14 +1,14 @@
-# /etc/nftables.d/teslatv.conf on the public VPS.
-# Forward public TCP 80/443 to the TeslaTV host over a plain WireGuard tunnel (wg-home),
+# /etc/nftables.d/parkplay.conf on the public VPS.
+# Forward public TCP 80/443 to the ParkPlay host over a plain WireGuard tunnel (wg-home),
 # NOT the tailnet: video is ~0.4-2.5 Mbit/s per viewer and would otherwise risk relayed
 # (DERP) tailnet paths. TLS terminates on the home host; the VPS only sees ciphertext.
 #
 # PUBLIC_IF  = the VPS NIC facing the internet (e.g. eth0; on Azure the inbound daddr = private NIC IP,
 #              so match on interface + port only)
-# WG_IF      = wg-home, VPS side 10.77.0.1, TeslaTV host 10.77.0.2 (example tunnel subnet)
-table inet teslatv {}
-flush table inet teslatv
-table inet teslatv {
+# WG_IF      = wg-home, VPS side 10.77.0.1, ParkPlay host 10.77.0.2 (example tunnel subnet)
+table inet parkplay {}
+flush table inet parkplay
+table inet parkplay {
     chain prerouting_nat {
         type nat hook prerouting priority dstnat; policy accept;
         iifname "eth0" tcp dport { 80, 443 } counter dnat ip to 10.77.0.2

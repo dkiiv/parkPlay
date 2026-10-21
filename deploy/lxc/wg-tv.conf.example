@@ -1,4 +1,4 @@
-# /etc/wireguard/wg-tv.conf on the TeslaTV host  (mode 600)
+# /etc/wireguard/wg-tv.conf on the ParkPlay host  (mode 600)
 [Interface]
 Address = 10.77.0.2/24
 PostUp = wg set %i private-key /etc/wireguard/wg-tv.key

@@ -7,8 +7,8 @@ ListenPort = 51820
 PostUp = wg set %i private-key /etc/wireguard/wg-home.key
 
 [Peer]
-# TeslaTV host (home side dials in; no Endpoint needed here)
-PublicKey = <TeslaTV host public key: cat /etc/wireguard/wg-tv.pub>
+# ParkPlay host (home side dials in; no Endpoint needed here)
+PublicKey = <ParkPlay host public key: cat /etc/wireguard/wg-tv.pub>
 AllowedIPs = 10.77.0.2/32
 
 # Add further home peers here (e.g. game servers) with their own /32s.

@@ -6,7 +6,7 @@
 // API + media proxy run in this process with a fresh media cache (cold, like a new video).
 //   home grid renders -> icons sit in their buttons -> search -> tap a result -> watch view
 //   plays -> overlay controls toggle -> back returns to the grid. Screenshots to /tmp/ui-*.png.
-//   sudo bash -c 'set -a; . /etc/teslatv/teslatv.env; set +a; node tools/ui-test.js [query]'
+//   sudo bash -c 'set -a; . /etc/parkplay/parkplay.env; set +a; node tools/ui-test.js [query]'
 // Exit 1 on any FAIL. Access/Google login is not covered (needs a real browser session).
 'use strict';
 require('dns').setDefaultResultOrder('ipv4first'); require('net').setDefaultAutoSelectFamilyAttemptTimeout(2000); // same as server/src/index.js
@@ -26,7 +26,7 @@ const TYPES = { '.js': 'application/javascript', '.css': 'text/css', '.svg': 'im
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const T0 = Date.now();
 const slog = (m) => { if (process.env.TV_MEDIA_DEBUG) console.log(`  [srv +${((Date.now() - T0) / 1000).toFixed(1)}s] ${m}`); };
-const yt = new YT({ stateDir: '/var/lib/teslatv', log: slog });
+const yt = new YT({ stateDir: '/var/lib/parkplay', log: slog });
 // Same process for API + media, as in production (index.js). Fresh cache per run = truly cold.
 const MEDIA_DIR = fs.mkdtempSync('/tmp/uitest-media-');
 const media = new Media({ yt, cacheDir: MEDIA_DIR, maxBytes: 2e9, log: slog });

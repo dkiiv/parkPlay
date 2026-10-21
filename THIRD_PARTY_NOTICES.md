@@ -1,6 +1,6 @@
 # Third-party notices
 
-TeslaTV's own code is under the MIT License (see `LICENSE`). This file lists the third-party work
+ParkPlay's own code is under the MIT License (see `LICENSE`). This file lists the third-party work
 that this repository **contains** (section 1) and the third-party software and services it
 **uses but does not contain** (section 2). Section 3 has the full license texts that section 1
 requires.
@@ -14,7 +14,7 @@ requires.
 - Upstream: <https://github.com/phoboslab/jsmpeg>
 - Copyright (c) 2017 Dominic Szablewski
 - License: MIT (full text in section 3.1)
-- Used by: `web/signin.html` (v1 remote-browser sign-in view) and `web/probe.html`
+- Used by: `web/signin.html` (sign-in sign-in view) and `web/probe.html`
 
 ### Material Icons (SVG path data)
 
@@ -78,7 +78,7 @@ and is not redistributed by this project.
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | The Unlicense (public domain dedication) | installed by the operator (not done by `install.sh`) | feeds, search, stream-URL resolution (v2) |
 | [FFmpeg](https://ffmpeg.org/) | LGPL-2.1+ or GPL-2.0+, depending on build (distro builds include GPL parts such as libx264) | OS package | v1 screen/audio encoder; generates the `/probe` test clips at install time |
 | [Google Chrome](https://www.google.com/chrome/) | proprietary, Google Chrome Terms of Service | Google's apt repository, added by `install.sh` | v1 kiosk browser used for the one-time sign-in |
-| [uBlock Origin Lite](https://github.com/uBlockOrigin/uBOL-home) | GPL-3.0 | latest release zip downloaded from GitHub by `install.sh` into `/var/lib/teslatv/extensions/` | optional ad blocking in the kiosk; not bundled or modified |
+| [uBlock Origin Lite](https://github.com/uBlockOrigin/uBOL-home) | GPL-3.0 | latest release zip downloaded from GitHub by `install.sh` into `/var/lib/parkplay/extensions/` | optional ad blocking in the kiosk; not bundled or modified |
 | [Caddy](https://caddyserver.com/) | Apache-2.0 | OS package | TLS + reverse proxy for the stream hostname |
 | [cloudflared](https://github.com/cloudflare/cloudflared) | Apache-2.0 | release binary downloaded from GitHub by `install.sh` | Cloudflare Tunnel for the UI hostname |
 | Xvfb (X.Org) | MIT/X11 | OS package | v1 virtual screen |
@@ -92,7 +92,7 @@ The test tools in `tools/` additionally start the locally installed Chrome in he
 
 ### Online services
 
-TeslaTV talks to YouTube/Google (video data, thumbnails from `i.ytimg.com`, media from
+ParkPlay talks to YouTube/Google (video data, thumbnails from `i.ytimg.com`, media from
 `googlevideo.com`, Google sign-in) and to Cloudflare (Tunnel and Access). Use of those services
 is governed by their own terms; see the "Legal" section of the README.
 

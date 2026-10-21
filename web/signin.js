@@ -1,4 +1,4 @@
-/* TeslaTV client: JSMpeg canvas video with an adaptive jitter buffer + tablet-style touch. */
+/* ParkPlay client: JSMpeg canvas video with an adaptive jitter buffer + tablet-style touch. */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);

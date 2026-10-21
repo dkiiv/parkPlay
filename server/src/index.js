@@ -1,5 +1,5 @@
 'use strict';
-// teslatv server. Two listeners:
+// parkplay server. Two listeners:
 //   APP    (TV_PORT, 127.0.0.1:8090)        reached ONLY via cloudflared -> Cloudflare Access.
 //          Every request must carry a valid Access JWT. Serves the UI, /signin, /api/*, /ws/ctl,
 //          /probe.
@@ -35,13 +35,13 @@ const cfg = {
   screenH: Number(env.TV_SCREEN_H || 1200),
   cdpPort: Number(env.TV_CDP_PORT || 9222),
   scale: Number(env.TV_SCALE || 1.25),
-  homeUrl: env.TV_HOME_URL || 'https://www.youtube.com/',
-  pulseServer: env.TV_PULSE_SERVER || 'unix:/run/teslatv/pulse/native',
+  homeUrl: env.TV_HOME_URL || 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F',
+  pulseServer: env.TV_PULSE_SERVER || 'unix:/run/parkplay/pulse/native',
   pulseSource: env.TV_PULSE_SOURCE || 'tv.monitor',
   ffmpeg: env.TV_FFMPEG || 'ffmpeg',
   preset: env.TV_PRESET || 'med',
   idleStopMs: Number(env.TV_IDLE_STOP_MS || 30000),
-  probeDir: env.TV_PROBE_DIR || '/var/lib/teslatv/probe',
+  probeDir: env.TV_PROBE_DIR || '/var/lib/parkplay/probe',
 };
 if (!cfg.publicHost || !cfg.streamHost) throw new Error('TV_PUBLIC_HOST and TV_STREAM_HOST are required');
 const WEB = path.resolve(__dirname, '..', '..', 'web');
@@ -55,8 +55,8 @@ auth.refreshKeys().catch((e) => log('access key fetch failed (will retry): ' + e
 const streamer = new Streamer(cfg, log);
 const chrome = new Chrome({ port: cfg.cdpPort, homeUrl: cfg.homeUrl, log });
 chrome.connect();
-const yt = new YT({ ytdlp: env.TV_YTDLP || 'yt-dlp', stateDir: env.TV_STATE_DIR || '/var/lib/teslatv', chrome, log });
-const media = new Media({ yt, cacheDir: path.join(env.TV_STATE_DIR || '/var/lib/teslatv', 'media'), maxBytes: Number(env.TV_CACHE_GB || 6) * 1e9, log });
+const yt = new YT({ ytdlp: env.TV_YTDLP || 'yt-dlp', stateDir: env.TV_STATE_DIR || '/var/lib/parkplay', chrome, log });
+const media = new Media({ yt, cacheDir: path.join(env.TV_STATE_DIR || '/var/lib/parkplay', 'media'), maxBytes: Number(env.TV_CACHE_GB || 6) * 1e9, log });
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',

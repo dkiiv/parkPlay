@@ -1,12 +1,12 @@
 [Unit]
-Description=Cloudflare Tunnel for the TeslaTV UI (behind Cloudflare Access)
+Description=Cloudflare Tunnel for the ParkPlay UI (behind Cloudflare Access)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 # Remotely-managed tunnel: ingress (TV_PUBLIC_HOST -> http://localhost:8090) lives in Cloudflare.
 ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run
-Environment=TUNNEL_TOKEN_FILE=/etc/cloudflared/teslatv.token
+Environment=TUNNEL_TOKEN_FILE=/etc/cloudflared/parkplay.token
 Restart=on-failure
 RestartSec=5
 DynamicUser=yes

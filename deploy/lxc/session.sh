@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Kiosk session: Xvfb + PulseAudio null sink + Chrome with CDP on localhost.
-# This is the v1 remote browser; in v2 it is only used for the one-time Google/YouTube sign-in
+# This is the sign-in browser; in v2 it is only used for the one-time Google/YouTube sign-in
 # at /signin (the server exports the YouTube cookies from this profile for yt-dlp).
-# Run by teslatv-session.service as the unprivileged `teslatv` user.
+# Run by parkplay-session.service as the unprivileged `parkplay` user.
 set -euo pipefail
 
 : "${TV_DISPLAY:=:99}"
 : "${TV_SCREEN_W:=1920}"
 : "${TV_SCREEN_H:=1200}"
 : "${TV_CDP_PORT:=9222}"
-: "${TV_HOME_URL:=https://www.youtube.com/}"
+: "${TV_HOME_URL:=https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2F}"
 : "${TV_CHROME:=/usr/bin/google-chrome-stable}"
-: "${TV_PROFILE:=/var/lib/teslatv/chrome-profile}"
+: "${TV_PROFILE:=/var/lib/parkplay/chrome-profile}"
 : "${TV_EXTENSIONS:=}"          # comma-separated unpacked extension dirs (optional)
 
-RUN=/run/teslatv
+RUN=/run/parkplay
 export XDG_RUNTIME_DIR="$RUN"
 export PULSE_RUNTIME_PATH="$RUN/pulse"
 export PULSE_SERVER="unix:$RUN/pulse/native"
@@ -33,7 +33,7 @@ for _ in $(seq 50); do xdpyinfo -display "$TV_DISPLAY" >/dev/null 2>&1 && break;
 # 2) audio: a null sink called "tv"; ffmpeg records its .monitor
 pulseaudio --daemonize=no --exit-idle-time=-1 --disallow-exit --disable-shm=yes \
   -n --load="module-native-protocol-unix socket=$RUN/pulse/native auth-anonymous=1" \
-  --load="module-null-sink sink_name=tv rate=44100 channels=2 sink_properties=device.description=TeslaTV" \
+  --load="module-null-sink sink_name=tv rate=44100 channels=2 sink_properties=device.description=ParkPlay" \
   --load="module-always-sink" &
 pids+=($!)
 for _ in $(seq 50); do pactl info >/dev/null 2>&1 && break; sleep 0.1; done

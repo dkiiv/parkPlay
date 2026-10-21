@@ -1,4 +1,4 @@
-/* TeslaTV app: local YouTube-style UI. Only data (JSON, thumbnails) and media bytes come from
+/* ParkPlay app: local YouTube-style UI. Only data (JSON, thumbnails) and media bytes come from
  * the server; all navigation, scrolling and controls are local and instant. */
 (function () {
   'use strict';

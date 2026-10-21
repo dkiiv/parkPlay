@@ -31,7 +31,7 @@ class YT {
 
   run(args, timeoutMs = 45000) {
     return new Promise((resolve, reject) => {
-      execFile(this.ytdlp, ['--no-warnings', '--ignore-config', ...args], { maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs, env: { ...process.env, HOME: process.env.HOME || '/var/lib/teslatv' } },
+      execFile(this.ytdlp, ['--no-warnings', '--ignore-config', ...args], { maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs, env: { ...process.env, HOME: process.env.HOME || '/var/lib/parkplay' } },
         (err, stdout, stderr) => {
           if (err) return reject(new Error((stderr || err.message).toString().split('\n').filter(Boolean).slice(-2).join(' | ')));
           try { resolve(JSON.parse(stdout)); } catch (e) { reject(new Error('yt-dlp: bad JSON')); }

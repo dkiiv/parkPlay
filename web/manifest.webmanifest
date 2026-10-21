@@ -1,6 +1,6 @@
 {
-  "name": "TeslaTV",
-  "short_name": "TeslaTV",
+  "name": "ParkPlay",
+  "short_name": "ParkPlay",
   "start_url": "/",
   "display": "fullscreen",
   "background_color": "#000000",

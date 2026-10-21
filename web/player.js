@@ -1,4 +1,4 @@
-/* TeslaTV player: plays YouTube's own H.264 + AAC without a <video> element.
+/* ParkPlay player: plays YouTube's own H.264 + AAC without a <video> element.
  *
  *   video: DASH fMP4 segments --fetch--> FMP4.parseSegment --> WebCodecs VideoDecoder --> canvas
  *   audio: progressive m4a     --fetch--> FMP4.parseAudioMoov --> WebCodecs AudioDecoder --> WebAudio

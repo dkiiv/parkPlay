@@ -170,7 +170,7 @@
   tp.addEventListener('pointermove', (e) => {
     inp.pointerTypes[e.pointerType] = (inp.pointerTypes[e.pointerType] || 0) + 1;
     const r = tp.getBoundingClientRect();
-    tctx.fillStyle = '#e82127';
+    tctx.fillStyle = '#0d9488';
     tctx.fillRect((e.clientX - r.left) * tp.width / r.width - 2, (e.clientY - r.top) * tp.height / r.height - 2, 4, 4);
     $('touchinfo').textContent = 'pointer events: ' + JSON.stringify(inp.pointerTypes);
   });

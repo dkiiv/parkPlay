@@ -1,4 +1,4 @@
-# /etc/caddy/Caddyfile on the TeslaTV host.
+# /etc/caddy/Caddyfile on the ParkPlay host.
 # Serves ONLY the stream hostname. The VPS forwards TCP 80/443 here over WireGuard, so TLS
 # terminates on this host (Let's Encrypt) and the VPS only sees ciphertext.
 # The UI hostname is NOT served here: it goes through cloudflared + Cloudflare Access.
@@ -25,7 +25,7 @@
 		respond 404
 	}
 	log {
-		output file /var/log/caddy/teslatv.log {
+		output file /var/log/caddy/parkplay.log {
 			roll_size 10MiB
 			roll_keep 3
 		}

@@ -23,7 +23,7 @@ Tesla (LTE / Wi-Fi)
 Public VPS (cloud firewall: TCP 80, 443, UDP 51820 open)
    │ nftables: DNAT eth0:80,443 -> 10.77.0.2, SNAT -> 10.77.0.1
    ▼ WireGuard wg-home (UDP 51820, home side dials out, keepalive 25 s)
-TeslaTV host 10.77.0.2  (home LAN, behind NAT, no port forwards)
+ParkPlay host 10.77.0.2  (home LAN, behind NAT, no port forwards)
    └── Caddy :80/:443 (Let's Encrypt) -> node 127.0.0.1:8091
 ```
 
@@ -35,7 +35,7 @@ range that doesn't collide with yours.
   so the home router needs no inbound rules.
 - SNAT to the VPS tunnel IP means replies go back through `wg-home` without policy routing
   at home. The home host's default route stays the home ISP.
-- Files: `deploy/vps/wg-home.conf.example`, `deploy/vps/teslatv.nft`,
+- Files: `deploy/vps/wg-home.conf.example`, `deploy/vps/parkplay.nft`,
   `deploy/lxc/wg-tv.conf.example`.
 - If you have a public IP and don't mind exposing it, a plain port forward of 80/443 to the
   host works too.

@@ -4,7 +4,7 @@
 //   1) YT search / resolve via the server modules
 //   2) media byte-range reads through the STREAM listener with a real ticket (+ cache timing)
 //   3) player in a headless Chrome page served locally, decoding real video+audio
-//   sudo bash -c 'set -a; . /etc/teslatv/teslatv.env; set +a; node tools/api-test.js [videoId]'
+//   sudo bash -c 'set -a; . /etc/parkplay/parkplay.env; set +a; node tools/api-test.js [videoId]'
 //   env: MAXH=720 (quality cap), SOAK=<seconds> (long-play drift/stall check). Exit 1 on any FAIL.
 'use strict';
 require('dns').setDefaultResultOrder('ipv4first'); require('net').setDefaultAutoSelectFamilyAttemptTimeout(2000); // same as server/src/index.js
@@ -26,7 +26,7 @@ async function get(url, headers = {}) {
 }
 
 (async () => {
-  const yt = new YT({ stateDir: '/var/lib/teslatv', log });
+  const yt = new YT({ stateDir: '/var/lib/parkplay', log });
   let t = Date.now();
   const s = await yt.list('search', 'big buck bunny');
   console.log(`search: ${s.items.length} items in ${Date.now() - t} ms; first: ${s.items[0] && s.items[0].title}`);

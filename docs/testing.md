@@ -6,7 +6,7 @@ failure. Run them on the host after every player, UI or server change, then test
 Most tools need the server's env file loaded:
 
 ```bash
-sudo bash -c 'set -a; . /etc/teslatv/teslatv.env; set +a; node tools/<tool>.js [args]'
+sudo bash -c 'set -a; . /etc/parkplay/parkplay.env; set +a; node tools/<tool>.js [args]'
 ```
 
 ## v2 (main app)
@@ -27,7 +27,7 @@ curl -sI https://tv-stream.example.com/anything       # expect 404
 For latency work, measure before changing anything: run with `NO_PREFETCH=1` and without, on
 several different videos with a fresh cache. One warm run proves nothing.
 
-## v1 (sign-in remote browser) and helpers
+## v1 (sign-in browser) and helpers
 
 | Tool | What it does |
 |---|---|
@@ -37,7 +37,7 @@ several different videos with a fresh cache. One warm run proves nothing.
 | `tools/e2e-access.js <ui-host>` | Split deployment end to end with a Cloudflare Access service token (`CF_ID`, `CF_SECRET`). Delete the token afterwards. |
 | `tools/ui-shot.js [out.png] [w h]` | Screenshot of the UI at a given viewport. |
 | `tools/cdp-eval.js "<expr>"` | Evaluate JS in the kiosk's page. |
-| `tools/push.sh [ssh-host]` | Copy the working tree to `/opt/teslatv` on the host and restart `teslatv-web`. |
+| `tools/push.sh [ssh-host]` | Copy the working tree to `/opt/parkplay` on the host and restart `parkplay-web`. |
 
 ## After a car test
 
@@ -45,5 +45,5 @@ The client reports to the server log: `client hello` (user agent, viewport, code
 `CLIENT ERROR` lines, and `player stats`. Read them first:
 
 ```bash
-journalctl -u teslatv-web | grep -E "client hello|CLIENT ERROR|player stats"
+journalctl -u parkplay-web | grep -E "client hello|CLIENT ERROR|player stats"
 ```
