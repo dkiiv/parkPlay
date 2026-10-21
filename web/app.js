@@ -54,8 +54,9 @@
   const feedCache = new Map();
   let curFeed = null;
 
-  async function loadFeed(kind, q) {
+  async function loadFeed(kind, q, fresh) {
     const key = kind + '|' + (q || '');
+    if (fresh) feedCache.delete(key);
     curFeed = key;
     document.querySelectorAll('.tab[data-kind]').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
     $('feed-title').textContent = kind === 'search' ? `Results for "${q}"` : kind === 'channel' ? (feedCache.get(key) || {}).title || 'Channel' : TITLES[kind];
@@ -63,11 +64,11 @@
     const cached = feedCache.get(key);
     if (cached) render(cached, key); else { $('grid').innerHTML = skeleton(); }
     try {
-      const r = await fetch('/api/feed?kind=' + encodeURIComponent(kind) + '&q=' + encodeURIComponent(q || ''), { cache: 'no-store' });
+      const r = await fetch('/api/feed?kind=' + encodeURIComponent(kind) + '&q=' + encodeURIComponent(q || '') + (fresh ? '&fresh=1' : ''), { cache: 'no-store' });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
       feedCache.set(key, d);
-      if (curFeed === key) render(d, key);
+      if (curFeed === key) { render(d, key); if (fresh) toast(kind === 'home' ? 'New recommendations' : 'Refreshed', 1500); }
     } catch (e) {
       if (curFeed === key && !cached) { $('grid').innerHTML = ''; msg('Could not load: ' + e.message); }
     }
@@ -90,7 +91,7 @@
     watchVisible(items);
     $('grid').onclick = (e) => {
       const ch = e.target.closest('.chan');
-      if (ch && ch.dataset.ch) { loadFeed('channel', ch.dataset.ch); $('main').scrollTop = 0; return; }
+      if (ch && ch.dataset.ch) { curKind = 'channel'; curQ = ch.dataset.ch; loadFeed('channel', ch.dataset.ch); $('main').scrollTop = 0; return; }
       const card = e.target.closest('.card');
       if (!card || card.classList.contains('sk')) return;
       const v = items[Number(card.dataset.i)];
@@ -99,12 +100,18 @@
     };
   }
 
-  document.querySelectorAll('.tab[data-kind]').forEach((b) => b.addEventListener('click', () => { loadFeed(b.dataset.kind); $('main').scrollTop = 0; }));
+  let curKind = 'home', curQ = '';
+  document.querySelectorAll('.tab[data-kind]').forEach((b) => b.addEventListener('click', () => {
+    // tapping the tab you're already on refreshes it (like YouTube)
+    const again = curKind === b.dataset.kind; curKind = b.dataset.kind; curQ = '';
+    loadFeed(curKind, '', again); $('main').scrollTop = 0;
+  }));
+  $('b-refresh').onclick = () => { loadFeed(curKind, curQ, true); $('main').scrollTop = 0; };
   $('searchbar').addEventListener('submit', (e) => {
     e.preventDefault();
     const q = $('q').value.trim();
     $('q').blur();
-    if (q) { loadFeed('search', q); $('main').scrollTop = 0; }
+    if (q) { curKind = 'search'; curQ = q; loadFeed('search', q); $('main').scrollTop = 0; }
   });
 
   // ---------- account ----------
@@ -206,7 +213,7 @@
   $('w-full').onclick = (e) => { e.stopPropagation(); document.body.classList.toggle('full'); showOverlay(); };
   $('w-q').onchange = (e) => {
     quality = Number(e.target.value); localStorage.setItem('tv.q', quality);
-    if (player && curVideo) { const at = player.currentTime(); const meta = player.meta; startPlayer(meta, at); }
+    if (player && curVideo) { const at = player.currentTime(); const meta = player.meta; badWindows = 0; startPlayer(meta, at); }
   };
   // tap the video: toggle controls
   $('stage').addEventListener('click', (e) => {
@@ -222,13 +229,45 @@
   $('seek').addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; player.seek(seekFrac(e) * player.duration()); showOverlay(); });
 
   // ---------- stats to server (diagnose lag without being in the car) ----------
+  // Every 15 s: totals plus the last window's deltas (drop % is per window, so a bad stretch shows).
+  let prevStats = null, badWindows = 0;
   function reportStats() {
     if (!player) return;
-    const s = player.stats;
-    const body = JSON.stringify({ id: player.meta.id, q: player.vfmt && player.vfmt.height, state: player.state, t: Math.round(player.currentTime()), ahead: Math.round(player.bufferedAhead()), drawn: s.drawn, dropped: s.dropped, stalls: s.stalls, mb: +(s.fetched / 1e6).toFixed(1), startMs: s.startMs, indexMs: s.indexMs });
+    const s = player.stats, p = prevStats && prevStats.id === player.meta.id && prevStats.gen === player ? prevStats : null;
+    const dDrawn = s.drawn - (p ? p.drawn : 0), dDrop = s.dropped - (p ? p.dropped : 0), dRaf = s.rafs - (p ? p.rafs : 0);
+    const win = { drawn: dDrawn, dropped: dDrop, dropPct: dDrawn + dDrop ? Math.round(100 * dDrop / (dDrawn + dDrop)) : 0, late: s.late - (p ? p.late : 0),
+      rafHz: Math.round(dRaf / 15), drawMsAvg: dDrawn ? +((s.drawMs - (p ? p.drawMs : 0)) / dDrawn).toFixed(2) : 0, rafGapMax: s.rafGapMax, vqMax: s.vqMax };
+    s.rafGapMax = 0; s.vqMax = 0;
+    prevStats = { id: player.meta.id, gen: player, drawn: s.drawn, dropped: s.dropped, rafs: s.rafs, late: s.late, drawMs: s.drawMs };
+    const v = player.vfmt || {};
+    const body = JSON.stringify({ id: player.meta.id, q: v.height, fps: v.fps, hw: s.hw, canvas: [player.canvas.width, player.canvas.height], state: player.state, t: Math.round(player.currentTime()), ahead: Math.round(player.bufferedAhead()), drawn: s.drawn, dropped: s.dropped, stalls: s.stalls, mb: +(s.fetched / 1e6).toFixed(1), startMs: s.startMs, indexMs: s.indexMs, win });
     try { navigator.sendBeacon('/api/stats', body); } catch (e) { /* ignore */ }
+    autoQuality(win);
   }
   setInterval(reportStats, 15000);
+
+  // Step down one quality level only when the DECODER can't keep up: frames come out of it after
+  // their display time ("late") in two consecutive windows. Drops caused by the screen painting
+  // slower than the video frame rate (car: ~24 paints/s vs 30 fps video) are not fixed by a
+  // lower resolution, so they never trigger this. The saved preference is untouched.
+  const LEVELS = [360, 480, 720, 1080];
+  function autoQuality(win) {
+    const fps = (player && player.vfmt && player.vfmt.fps) || 30;
+    const decodedPerSec = (win.drawn + win.dropped) / 15;
+    if (!player || player.state !== 'playing' || decodedPerSec < fps * 0.5) { badWindows = 0; return; }
+    const decoderBehind = win.late > decodedPerSec * 15 * 0.15;
+    badWindows = decoderBehind ? badWindows + 1 : 0;
+    if (badWindows < 2) return;
+    badWindows = 0;
+    const cur = (player.vfmt && player.vfmt.height) || quality;
+    const lower = LEVELS.filter((h) => h < cur).pop();
+    if (!lower) return;
+    toast(`Video was choppy: switched to ${lower}p`, 4000);
+    $('w-q').value = String(lower);
+    const at = player.currentTime(), meta = player.meta;
+    startPlayerAt(meta, at, lower);
+  }
+  function startPlayerAt(meta, at, h) { const keep = quality; quality = h; startPlayer(meta, at); quality = keep; }
 
   // ---------- boot ----------
   if (!CAN_PLAY) toast('This browser has no WebCodecs: browsing only', 6000);

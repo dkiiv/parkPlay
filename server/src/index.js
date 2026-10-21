@@ -134,7 +134,7 @@ const app = http.createServer(async (req, res) => {
     // ---- YouTube data (local UI) ----
     if (p === '/api/feed') {
       const kind = u.searchParams.get('kind') || 'home';
-      try { const d = await yt.list(kind, u.searchParams.get('q') || ''); yt.prefetch(d.items, 6, (m) => warmMedia(m, 1)); return json(res, 200, d); }
+      try { const d = await yt.list(kind, u.searchParams.get('q') || '', 36, { fresh: u.searchParams.get('fresh') === '1' }); yt.prefetch(d.items, 6, (m) => warmMedia(m, 1)); return json(res, 200, d); }
       catch (e) { log(`feed ${kind}: ${e.message}`); return json(res, 502, { error: e.message }); }
     }
     if (p.startsWith('/api/video/')) {

@@ -20,14 +20,16 @@
     constructor(canvas, o) {
       this.canvas = canvas;
       this.ctx2d = canvas.getContext('2d', { alpha: false, desynchronized: true });
-      this.o = Object.assign({ maxHeight: 720, aheadSec: 120, aheadBytes: 80 * 1024 * 1024, allow60: false }, o);
+      // maxQueued: decoded VideoFrames held before drawing. Keep this small: hardware decoders own a
+      // small pool of output surfaces and stall while the app holds them, then deliver late bursts.
+      this.o = Object.assign({ maxHeight: 720, aheadSec: 120, aheadBytes: 80 * 1024 * 1024, allow60: false, maxQueued: 8 }, o);
       this.meta = o.meta;
       this.state = 'idle';
       this.gen = 0;              // bumps on every seek/destroy; stale async work checks it
       this.vq = [];              // decoded VideoFrames waiting to be drawn (sorted by ts)
       this.paused = false;
       this.rate = 1;
-      this.stats = { fetched: 0, dropped: 0, drawn: 0, stalls: 0, startMs: 0 };
+      this.stats = { fetched: 0, dropped: 0, drawn: 0, stalls: 0, startMs: 0, decoded: 0, late: 0, drawMs: 0, rafs: 0, rafGapMax: 0, vqMax: 0 };
       this.raf = 0;
       this.audioCtx = null;
       this.gain = null;
@@ -161,6 +163,7 @@
             try { const r = await VideoDecoder.isConfigSupported(cfg); if (r.supported) { this.vConfig = cfg; break; } } catch (e) { /* try next */ }
           }
           if (!this.vConfig) throw new Error('this browser cannot decode ' + init.codec);
+          this.stats.hw = this.vConfig.hardwareAcceleration;
           return;
         }
         n *= 4;
@@ -181,7 +184,10 @@
           if (g !== this.gen) { frame.close(); return; }
           const ts = frame.timestamp / 1e6;
           if (ts + 0.001 < this.vDecodeFrom) { frame.close(); return; } // pre-roll after seek
+          this.stats.decoded++;
+          if (this.anchor && ts < this.currentTime() - 0.05) this.stats.late++; // decoder fell behind the clock
           this.vq.push(frame);
+          if (this.vq.length > this.stats.vqMax) this.stats.vqMax = this.vq.length;
         },
         error: (e) => { this.o.log && this.o.log('VideoDecoder error: ' + e.message); this.fatal('video decode error: ' + e.message); },
       });
@@ -227,7 +233,7 @@
       this.vSegState = new Map();
       this.prefetchVideo(g);
       while (g === this.gen && this.vNext < segs.length) {
-        if (this.vq.length > 45 || (this.vdec.decodeQueueSize || 0) > 20) { await sleep(30); continue; }
+        if (this.vq.length >= this.o.maxQueued || (this.vdec.decodeQueueSize || 0) > 10) { await sleep(30); continue; }
         let samples;
         try { samples = await this.fetchSeg(this.vNext); } catch (e) { if (g === this.gen) this.fatal(e.message); return; }
         if (g !== this.gen) return;
@@ -236,7 +242,7 @@
         for (const smp of samples) {
           if (g !== this.gen) return;
           this.vdec.decode(new EncodedVideoChunk({ type: smp.key ? 'key' : 'delta', timestamp: Math.round(smp.pts * 1e6), duration: Math.round(smp.dur * 1e6), data: smp.data }));
-          while (g === this.gen && (this.vq.length > 45 || this.vdec.decodeQueueSize > 20)) await sleep(15);
+          while (g === this.gen && (this.vq.length >= this.o.maxQueued || this.vdec.decodeQueueSize > 10)) await sleep(15);
         }
         this.vDecodedEnd = s.t + s.dur;
         this.vSegs.delete(idx); this.vSegState.delete(idx); // encoded bytes no longer needed
@@ -386,6 +392,9 @@
       const tick = () => {
         if (this.dead) return;
         this.raf = requestAnimationFrame(tick);
+        const now = performance.now();
+        if (this.lastRaf) { const gap = now - this.lastRaf; if (gap > this.stats.rafGapMax) this.stats.rafGapMax = Math.round(gap); }
+        this.lastRaf = now; this.stats.rafs++;
         if (!this.anchor) { this.maybeStartPlayback(this.gen); return; }
         const ct = this.currentTime();
         this.drainAudio(this.gen);
@@ -404,7 +413,9 @@
           frame = this.vq.shift();
         }
         if (frame) {
+          const d0 = performance.now();
           this.ctx2d.drawImage(frame, 0, 0, this.canvas.width, this.canvas.height);
+          this.stats.drawMs += performance.now() - d0;
           this.stats.lastFrameT = frame.timestamp / 1e6; // A/V sync check: compare with currentTime()
           frame.close();
           this.stats.drawn++;

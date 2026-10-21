@@ -61,6 +61,11 @@ class YT {
       } catch (e) { this.log('cookie export: ' + e.message); }
     }
     if (fs.existsSync(this.uploadedFile)) { this.signedIn = true; return this.uploadedFile; }
+    // Chrome not reachable (restarting, or a test process): reuse the last export if it still has
+    // a YouTube session. signOut() deletes it, so this never resurrects a signed-out account.
+    try {
+      if (/youtube\.com\t[^\n]*\t(SAPISID|__Secure-3PAPISID)\t/.test(fs.readFileSync(this.cookieFile, 'utf8'))) { this.signedIn = true; return this.cookieFile; }
+    } catch { /* no export yet */ }
     this.signedIn = false;
     return null;
   }
@@ -100,7 +105,9 @@ class YT {
     };
   }
 
-  async list(kind, q = '', limit = 36) {
+  // fresh: skip the cache. For feeds (home etc.) also hide videos already shown in earlier
+  // pages, so "refresh" gives genuinely new suggestions when YouTube returns overlapping ones.
+  async list(kind, q = '', limit = 36, { fresh = false } = {}) {
     let target;
     if (kind === 'search') { if (!q.trim()) return []; target = `ytsearch${limit}:${q.trim()}`; }
     else if (kind === 'channel') {
@@ -113,11 +120,20 @@ class YT {
     const key = `${kind}|${q}|${ck.length}`;
     const ttl = kind === 'search' ? 30 * 60e3 : 5 * 60e3;
     const hit = this.listCache.get(key);
-    if (hit && Date.now() - hit.at < ttl) return hit.data;
-    if (this.inflight.has(key)) return this.inflight.get(key);
-    const p = this.run([...ck, '--flat-playlist', '-J', '--playlist-end', String(limit), target])
+    if (!fresh && hit && Date.now() - hit.at < ttl) return hit.data;
+    if (!fresh && this.inflight.has(key)) return this.inflight.get(key);
+    this.seen = this.seen || new Map(); // feed key -> Set of ids already shown
+    const seen = this.seen.get(key) || new Set();
+    const want = fresh && FEEDS[kind] ? limit * 2 : limit; // over-fetch so filtering still leaves a full page
+    const p = this.run([...ck, '--flat-playlist', '-J', '--playlist-end', String(want), target])
       .then((d) => {
-        const items = (d.entries || []).map(YT.mapEntry).filter(Boolean);
+        let items = (d.entries || []).map(YT.mapEntry).filter(Boolean);
+        if (fresh && FEEDS[kind]) {
+          const unseen = items.filter((v) => !seen.has(v.id));
+          // prefer unseen; top up with seen ones only if YouTube returned too few new ones
+          items = unseen.length >= 12 ? unseen.slice(0, limit) : [...unseen, ...items.filter((v) => seen.has(v.id))].slice(0, limit);
+        } else items = items.slice(0, limit);
+        if (FEEDS[kind]) { for (const v of items) seen.add(v.id); if (seen.size > 2000) seen.clear(); this.seen.set(key, seen); }
         const data = { items, title: d.title || '' };
         this.listCache.set(key, { at: Date.now(), data });
         return data;

@@ -34,7 +34,7 @@ const warmMedia = (d, chunks) => { // mirrors index.js warmMedia()
   const v = d.video.filter((f) => f.height <= 720 && (f.fps || 30) <= 31).pop() || d.video.filter((f) => f.height <= 720).pop() || d.video[0];
   media.readAhead(d.id, v.itag, 0, v.size, chunks); media.readAhead(d.id, d.audio[0].itag, 0, d.audio[0].size, chunks);
 };
-const beacons = []; const prefetchCalls = [];
+const beacons = []; const prefetchCalls = []; const feedCalls = [];
 
 const json = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
 const body = (req) => new Promise((r) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => r(b)); });
@@ -42,7 +42,7 @@ const body = (req) => new Promise((r) => { let b = ''; req.on('data', (c) => { b
 const srv = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'); const p = u.pathname;
   try {
-    if (p === '/api/feed') { const d = await yt.list(u.searchParams.get('kind') || 'home', u.searchParams.get('q') || ''); if (!process.env.NO_PREFETCH) yt.prefetch(d.items, 6, (m) => warmMedia(m, 1)); return json(res, 200, d); }
+    if (p === '/api/feed') { const d = await yt.list(u.searchParams.get('kind') || 'home', u.searchParams.get('q') || '', 36, { fresh: u.searchParams.get('fresh') === '1' }); feedCalls.push(u.search); if (!process.env.NO_PREFETCH) yt.prefetch(d.items, 6, (m) => warmMedia(m, 1)); return json(res, 200, d); }
     if (p.startsWith('/api/video/')) { slog('api/video ' + p.slice(11)); yt.cancelPrefetch(); const d = await yt.resolve(p.slice(11)); slog('resolved'); warmMedia(d, 8); return json(res, 200, YT.publicMeta(d)); }
     if (p === '/api/prefetch') { const b = await body(req); prefetchCalls.push(b); if (!process.env.NO_PREFETCH) { try { yt.prefetch((JSON.parse(b).ids || []).slice(0, 8), 8, (m) => warmMedia(m, 1), 8); } catch { /* */ } } res.writeHead(204); return res.end(); }
     if (p === '/api/account') return json(res, 200, { signedIn: yt.signedIn, user: 'test' });
@@ -107,6 +107,17 @@ const srv = http.createServer(async (req, res) => {
   const home = await ev(`({cards:document.querySelectorAll('#grid .card:not(.sk)').length,msg:document.getElementById('feed-msg').textContent.trim().slice(0,80)})`);
   check('home feed', t >= 0 && (home.cards > 0 || /sign in/i.test(home.msg)), `${home.cards} cards${home.msg ? ', msg: ' + home.msg : ''} in ${t} ms`);
 
+  // 1b) when signed in: refreshing Home returns mostly videos not shown before
+  if (home.cards > 0) {
+    const ids0 = await ev(`[...document.querySelectorAll('#grid .card:not(.sk) .thumb img')].map(i=>i.src.split('/vi/')[1].split('/')[0])`);
+    await tap('#b-refresh');
+    await until(`document.querySelectorAll('#grid .card:not(.sk)').length>0 && !document.getElementById('toast').classList.contains('hidden')`, 40000);
+    await sleep(300);
+    const ids1 = await ev(`[...document.querySelectorAll('#grid .card:not(.sk) .thumb img')].map(i=>i.src.split('/vi/')[1].split('/')[0])`);
+    const fresh = ids1.filter((x) => !ids0.includes(x)).length;
+    check('home refresh gives new videos', ids1.length >= 12 && fresh >= ids1.length * 0.5, `${fresh}/${ids1.length} new after refresh (was ${ids0.length})`);
+  }
+
   // 2) icons are sized and sit inside their buttons (Tesla has no symbol glyphs; CSS-less fallback)
   const icons = await ev(`[...document.querySelectorAll('#rail .tab')].map(b=>{const s=b.querySelector('svg');const bb=b.getBoundingClientRect(),sb=s.getBoundingClientRect();return {w:sb.width|0,inside:sb.left>=bb.left&&sb.right<=bb.right&&sb.top>=bb.top&&sb.bottom<=bb.bottom}})`);
   check('rail icons', icons.length >= 5 && icons.every((x) => x.inside && x.w >= 20), JSON.stringify(icons));
@@ -124,6 +135,16 @@ const srv = http.createServer(async (req, res) => {
   check('search results', t >= 0 && nres > 0, `${nres} results for "${QUERY}" in ${t} ms`);
 
   await sleep(Number(process.env.BROWSE_MS || 6000)); // a person looks at the results before tapping
+  // 3a) refresh button re-queries (fresh=1) and re-renders; tapping the active tab does too
+  const firstIds = await ev(`[...document.querySelectorAll('#grid .card:not(.sk) .thumb img')].slice(0,3).map(i=>i.src).join()`);
+  const nFeed = feedCalls.length;
+  await tap('#b-refresh');
+  t = await until(`document.querySelectorAll('#grid .card:not(.sk)').length>0`, 20000);
+  await sleep(300);
+  const refreshIcon = await ev(`(()=>{const b=document.getElementById('b-refresh'),s=b.querySelector('svg');const bb=b.getBoundingClientRect(),sb=s.getBoundingClientRect();return sb.width>=20&&sb.left>=bb.left&&sb.right<=bb.right&&bb.height>=44})()`);
+  const freshCall = feedCalls.slice(nFeed).find((q) => q.includes('fresh=1'));
+  check('refresh button', freshCall && t >= 0 && refreshIcon, `request ${freshCall || 'none'}, grid back in ${t} ms, icon ok ${refreshIcon}, first thumbs changed ${firstIds !== (await ev(`[...document.querySelectorAll('#grid .card:not(.sk) .thumb img')].slice(0,3).map(i=>i.src).join()`))}`);
+
   // 3b) grid layout: no two cards overlap, and each card's thumb/title/meta stays inside it, at
   // the car viewport and at common desktop widths (regression: the probe page's global .card
   // rule gave grid cards a fixed width + margins, so they overlapped).
