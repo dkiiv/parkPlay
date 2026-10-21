@@ -124,6 +124,27 @@ const srv = http.createServer(async (req, res) => {
   check('search results', t >= 0 && nres > 0, `${nres} results for "${QUERY}" in ${t} ms`);
 
   await sleep(Number(process.env.BROWSE_MS || 6000)); // a person looks at the results before tapping
+  // 3b) grid layout: no two cards overlap, and each card's thumb/title/meta stays inside it, at
+  // the car viewport and at common desktop widths (regression: the probe page's global .card
+  // rule gave grid cards a fixed width + margins, so they overlapped).
+  const layout = async () => ev(`(()=>{const cs=[...document.querySelectorAll('#grid .card:not(.sk)')].slice(0,24).map(c=>({c,b:c.getBoundingClientRect()}));let ov=0,out=0;
+    for(let i=0;i<cs.length;i++){for(let j=i+1;j<cs.length;j++){const a=cs[i].b,b=cs[j].b;if(a.left<b.right-1&&b.left<a.right-1&&a.top<b.bottom-1&&b.top<a.bottom-1)ov++;}
+      for(const k of cs[i].c.children){const r=k.getBoundingClientRect();if(r.width&&(r.left<cs[i].b.left-1||r.right>cs[i].b.right+1))out++;}}
+    const g=document.getElementById('grid').getBoundingClientRect();const cols=new Set(cs.map(x=>Math.round(x.b.left))).size;
+    return {n:cs.length,overlaps:ov,childOverflow:out,cols,cardW:Math.round(cs[0]?cs[0].b.width:0),gridW:Math.round(g.width),hScroll:document.getElementById('main').scrollWidth>document.getElementById('main').clientWidth+1}})()`);
+  const sizes = [[W, H], [1280, 720], [1920, 1080], [2560, 1300], [900, 700]];
+  const lay = [];
+  for (const [vw, vh] of sizes) {
+    await cdp('Emulation.setDeviceMetricsOverride', { width: vw, height: vh, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const L = await layout(); lay.push(`${vw}x${vh}: ${L.cols} cols ${L.cardW}px ov=${L.overlaps} out=${L.childOverflow}${L.hScroll ? ' HSCROLL' : ''}`);
+    if (vw === 1920) await shot('grid-1920');
+    lay.ok = (lay.ok !== false) && L.n > 0 && L.overlaps === 0 && L.childOverflow === 0 && !L.hScroll;
+  }
+  await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+  await sleep(300);
+  check('grid layout (no overlap)', lay.ok, lay.join(' | '));
+
   // 4) drag scrolls the grid
   const y0 = await ev(`document.getElementById('main').scrollTop`);
   await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: W / 2, y: H * 0.8 }] });
