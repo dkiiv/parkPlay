@@ -27,6 +27,28 @@
     return ticket;
   }
 
+  // Tell the server which cards are on screen once scrolling settles, so it can resolve them
+  // before the tap (a cold resolve is ~3 s). Cheap: ids only, at most once per settle.
+  let visIO = null, visTimer = 0, visItems = [], lastSent = '';
+  const visible = new Set();
+  function sendVisible() {
+    const ids = [...visible].sort((x, y) => x - y).map((i) => visItems[i] && visItems[i].id).filter(Boolean).slice(0, 8);
+    const key = ids.join(',');
+    if (!ids.length || key === lastSent) return;
+    lastSent = key;
+    fetch('/api/prefetch', { method: 'POST', body: JSON.stringify({ ids }), keepalive: true }).catch(() => {});
+  }
+  function watchVisible(items) {
+    visItems = items; visible.clear(); lastSent = '';
+    if (!('IntersectionObserver' in window)) return;
+    if (visIO) visIO.disconnect();
+    visIO = new IntersectionObserver((ents) => {
+      for (const en of ents) { const i = Number(en.target.dataset.i); if (en.isIntersecting) visible.add(i); else visible.delete(i); }
+      clearTimeout(visTimer); visTimer = setTimeout(sendVisible, 700);
+    }, { root: $('main'), threshold: 0.6 });
+    document.querySelectorAll('#grid .card[data-i]').forEach((c) => visIO.observe(c));
+  }
+
   // ---------- browse ----------
   const TITLES = { home: 'Home', subs: 'Subscriptions', history: 'History', later: 'Watch later', search: 'Search', channel: 'Channel' };
   const feedCache = new Map();
@@ -65,6 +87,7 @@
         <div class="title">${esc(v.title)}</div>
         <div class="meta"><span class="chan" data-ch="${esc(v.channelUrl)}">${esc(v.channel)}</span>${v.views ? ' · ' + fmtViews(v.views) : ''}</div>
       </div>`).join('');
+    watchVisible(items);
     $('grid').onclick = (e) => {
       const ch = e.target.closest('.chan');
       if (ch && ch.dataset.ch) { loadFeed('channel', ch.dataset.ch); $('main').scrollTop = 0; return; }

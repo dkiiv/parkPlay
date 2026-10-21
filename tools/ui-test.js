@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // End-to-end test of the local car UI (web/index.html + app.js + player.js), run ON the host.
-// Serves web/ on 127.0.0.1:8096 with the real /api handlers' data (YT module, real stream
-// ticket, media proxied to the stream listener with the production Origin), then drives a
+// Serves web/ on 127.0.0.1:8096 with the real server modules (yt.js + media.js in-process, as
+// in index.js; TV_MEDIA_DEBUG=1 prints a server timeline), then drives a
 // headless Chrome at the car's viewport with touch taps:
+// API + media proxy run in this process with a fresh media cache (cold, like a new video).
 //   home grid renders -> icons sit in their buttons -> search -> tap a result -> watch view
 //   plays -> overlay controls toggle -> back returns to the grid. Screenshots to /tmp/ui-*.png.
 //   sudo bash -c 'set -a; . /etc/teslatv/teslatv.env; set +a; node tools/ui-test.js [query]'
@@ -14,7 +15,7 @@ const http = require('http');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const S = (f) => require(path.join(__dirname, '..', 'server', 'src', f));
-const { YT } = S('yt.js'); const { AccessAuth } = S('access.js');
+const { YT } = S('yt.js'); const { AccessAuth } = S('access.js'); const { Media } = S('media.js');
 const WebSocket = require(path.join(__dirname, '..', 'server', 'node_modules', 'ws'));
 const auth = new AccessAuth({ teamDomain: process.env.TV_ACCESS_TEAM, aud: process.env.TV_ACCESS_AUD, secret: process.env.TV_SECRET });
 const ORIGIN = `https://${process.env.TV_PUBLIC_HOST}`;
@@ -23,34 +24,41 @@ const [W, H] = [Number(process.env.VW || 1888), Number(process.env.VH || 1022)];
 const WEB = path.join(__dirname, '..', 'web');
 const TYPES = { '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.html': 'text/html', '.webmanifest': 'application/manifest+json' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const yt = new YT({ stateDir: '/var/lib/teslatv', log: () => {} });
-const beacons = [];
-
-// Production warms via index.js warmMedia() inside the server process. This test runs its own
-// API process, so warm the production process the only way it can: a tiny ticketed range read
-// on the stream listener (resolves there, and the media read-ahead pulls the first chunks).
-function warmProd(d) {
+const T0 = Date.now();
+const slog = (m) => { if (process.env.TV_MEDIA_DEBUG) console.log(`  [srv +${((Date.now() - T0) / 1000).toFixed(1)}s] ${m}`); };
+const yt = new YT({ stateDir: '/var/lib/teslatv', log: slog });
+// Same process for API + media, as in production (index.js). Fresh cache per run = truly cold.
+const MEDIA_DIR = fs.mkdtempSync('/tmp/uitest-media-');
+const media = new Media({ yt, cacheDir: MEDIA_DIR, maxBytes: 2e9, log: slog });
+const warmMedia = (d, chunks) => { // mirrors index.js warmMedia()
   const v = d.video.filter((f) => f.height <= 720 && (f.fps || 30) <= 31).pop() || d.video.filter((f) => f.height <= 720).pop() || d.video[0];
-  for (const f of [v, d.audio[0]]) {
-    http.request({ host: '127.0.0.1', port: Number(process.env.TV_STREAM_PORT || 8091), path: `/media/${d.id}/${f.itag}?t=${encodeURIComponent(auth.issueTicket('test'))}`, headers: { Range: 'bytes=0-1', Origin: ORIGIN } }, (r) => r.resume()).on('error', () => {}).end();
-  }
-}
+  media.readAhead(d.id, v.itag, 0, v.size, chunks); media.readAhead(d.id, d.audio[0].itag, 0, d.audio[0].size, chunks);
+};
+const beacons = []; const prefetchCalls = [];
+
 const json = (res, code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
 const body = (req) => new Promise((r) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => r(b)); });
 
 const srv = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'); const p = u.pathname;
   try {
-    if (p === '/api/feed') { const d = await yt.list(u.searchParams.get('kind') || 'home', u.searchParams.get('q') || ''); if (!process.env.NO_PREFETCH) yt.prefetch(d.items, 4, warmProd); return json(res, 200, d); }
-    if (p.startsWith('/api/video/')) return json(res, 200, YT.publicMeta(await yt.resolve(p.slice(11))));
+    if (p === '/api/feed') { const d = await yt.list(u.searchParams.get('kind') || 'home', u.searchParams.get('q') || ''); if (!process.env.NO_PREFETCH) yt.prefetch(d.items, 6, (m) => warmMedia(m, 1)); return json(res, 200, d); }
+    if (p.startsWith('/api/video/')) { slog('api/video ' + p.slice(11)); yt.cancelPrefetch(); const d = await yt.resolve(p.slice(11)); slog('resolved'); warmMedia(d, 8); return json(res, 200, YT.publicMeta(d)); }
+    if (p === '/api/prefetch') { const b = await body(req); prefetchCalls.push(b); if (!process.env.NO_PREFETCH) { try { yt.prefetch((JSON.parse(b).ids || []).slice(0, 8), 8, (m) => warmMedia(m, 1), 8); } catch { /* */ } } res.writeHead(204); return res.end(); }
     if (p === '/api/account') return json(res, 200, { signedIn: yt.signedIn, user: 'test' });
     if (p === '/api/ticket') return json(res, 200, { ticket: auth.issueTicket('test'), audio: '', ttl: 3600, user: 'test' });
     if (p === '/api/stats' || p === '/api/clientlog') { beacons.push([p, await body(req)]); res.writeHead(204); return res.end(); }
-    if (p.startsWith('/media/')) {
-      const q = http.request({ host: '127.0.0.1', port: Number(process.env.TV_STREAM_PORT || 8091), path: req.url, headers: { Range: req.headers.range || '', Origin: ORIGIN } }, (up) => {
-        res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/octet-stream', 'Content-Range': up.headers['content-range'] || '' }); up.pipe(res);
-      });
-      q.on('error', () => { res.writeHead(502); res.end(); }); return q.end();
+    if (p.startsWith('/media/')) { // same semantics as index.js serveMedia() (minus ticket/Origin, covered by api-test)
+      const [, , id, itag] = p.split('/');
+      const f = await yt.format(id, itag);
+      if (!f) { res.writeHead(404); return res.end(); }
+      const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
+      const start = m ? Number(m[1]) : 0; const end = m && m[2] ? Number(m[2]) : start + 2 * 1024 * 1024 - 1;
+      const t1 = Date.now();
+      const { buf, size } = await media.read(id, itag, start, end);
+      slog(`media ${id}/${itag} ${start}-${end} -> ${buf.length} B in ${Date.now() - t1} ms`);
+      res.writeHead(206, { 'Content-Type': 'video/mp4', 'Content-Range': `bytes ${start}-${start + buf.length - 1}/${size}`, 'Content-Length': buf.length });
+      return res.end(buf);
     }
     const f = path.join(WEB, p === '/' ? 'index.html' : path.normalize(p));
     if (!f.startsWith(WEB)) { res.writeHead(403); return res.end(); }
@@ -124,11 +132,16 @@ const srv = http.createServer(async (req, res) => {
   await sleep(600);
   const y1 = await ev(`document.getElementById('main').scrollTop`);
   check('drag scrolls', y1 > y0 + 100, `scrollTop ${y0} -> ${y1}`);
-  await ev(`document.getElementById('main').scrollTop=0`);
+  // TAP=deep: tap a card scrolled into view past the feed prefetch (index >= 8), the case the
+  // visible-card beacon is for. Default: the first card (covered by the feed prefetch).
+  if (process.env.TAP !== 'deep') await ev(`document.getElementById('main').scrollTop=0`);
+  await sleep(Number(process.env.BROWSE_MS || 6000) / 2);
 
   // 5) tap the first non-live result -> watch view plays
-  const idx = await ev(`[...document.querySelectorAll('#grid .card:not(.sk)')].findIndex(c=>!c.querySelector('.dur.live'))`);
+  const idx = await ev(`(()=>{const cs=[...document.querySelectorAll('#grid .card:not(.sk)')];const vh=document.getElementById('main').getBoundingClientRect();const vis=(c)=>{const b=c.getBoundingClientRect();return b.top>=vh.top&&b.bottom<=vh.bottom};const ok=(c)=>!c.querySelector('.dur.live');${process.env.TAP === 'deep' ? "const d=cs.findIndex(c=>Number(c.dataset.i)>=8&&vis(c)&&ok(c));if(d>=0)return d;" : ''}return cs.findIndex(ok)})()`);
+  console.log('  tapping card', idx);
   await ev(`(()=>{window.__tt={};const of=window.fetch;window.fetch=function(u,o){const s=String(u),t0=performance.now();return of.apply(this,arguments).then(r=>{if(s.includes('/api/video/'))__tt.videoApi=Math.round(performance.now()-t0);if(s.includes('/media/')&&!__tt.firstMedia)__tt.firstMedia=Math.round(performance.now()-t0);return r})};__tt.tap=performance.now()})()`);
+  slog('--- TAP ---');
   await tap(`#grid .card[data-i="${idx}"] .thumb`);
   t = await until(`!document.getElementById('watch').classList.contains('hidden')`, 3000);
   check('tap opens watch view', t >= 0, `${t} ms, hash ${await ev('location.hash')}`);
@@ -167,9 +180,10 @@ const srv = http.createServer(async (req, res) => {
 
   const clientErrs = beacons.filter((b) => b[0] === '/api/clientlog').map((b) => b[1]);
   check('no client errors', !errors.length && !clientErrs.length, [...errors, ...clientErrs].join(' | ').slice(0, 400));
+  check('visible-card prefetch beacon', prefetchCalls.length > 0 && prefetchCalls.every((b) => { try { const x = JSON.parse(b).ids; return x.length > 0 && x.length <= 8; } catch { return false; } }), `${prefetchCalls.length} calls, last ${prefetchCalls[prefetchCalls.length - 1] || ''}`);
   console.log(`stats beacons: ${beacons.filter((b) => b[0] === '/api/stats').length}; screenshots /tmp/ui-home.png /tmp/ui-watch.png`);
   const failed = results.filter((r) => !r[1]).map((r) => r[0]);
   console.log(failed.length ? `RESULT: FAIL (${failed.join(', ')})` : `RESULT: PASS (${results.length} checks)`);
   ch.kill('SIGKILL'); srv.close();
-  setTimeout(() => { try { fs.rmSync(prof, { recursive: true, force: true }); } catch { /* */ } process.exit(failed.length ? 1 : 0); }, 500);
+  setTimeout(() => { try { fs.rmSync(MEDIA_DIR, { recursive: true, force: true }); fs.rmSync(prof, { recursive: true, force: true }); } catch { /* */ } process.exit(failed.length ? 1 : 0); }, 500);
 })().catch((e) => { console.error('FAIL', e); process.exit(1); });

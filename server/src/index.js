@@ -134,17 +134,24 @@ const app = http.createServer(async (req, res) => {
     // ---- YouTube data (local UI) ----
     if (p === '/api/feed') {
       const kind = u.searchParams.get('kind') || 'home';
-      try { const d = await yt.list(kind, u.searchParams.get('q') || ''); yt.prefetch(d.items, 4, (m) => warmMedia(m, 1)); return json(res, 200, d); }
+      try { const d = await yt.list(kind, u.searchParams.get('q') || ''); yt.prefetch(d.items, 6, (m) => warmMedia(m, 1)); return json(res, 200, d); }
       catch (e) { log(`feed ${kind}: ${e.message}`); return json(res, 502, { error: e.message }); }
     }
     if (p.startsWith('/api/video/')) {
       const id = p.slice('/api/video/'.length);
+      yt.cancelPrefetch();
       try {
         const d = await yt.resolve(id);
         // warm the server cache so the first bytes are local by the time the car asks
         warmMedia(d, 8);
         return json(res, 200, YT.publicMeta(d));
       } catch (e) { log(`resolve ${id}: ${e.message}`); return json(res, 502, { error: e.message }); }
+    }
+    if (p === '/api/prefetch' && req.method === 'POST') { // ids of the cards currently on the car's screen
+      let ids = [];
+      try { ids = JSON.parse(await readBody(req, 4096)).ids || []; } catch { /* ignore */ }
+      yt.prefetch(ids.slice(0, 8), 8, (m) => warmMedia(m, 1), 8); // warm all on-screen cards: ~2 MiB server-side download each, no car/VPS traffic
+      res.writeHead(204); return res.end();
     }
     if (p === '/api/account') { await yt.exportCookies(); return json(res, 200, { signedIn: yt.signedIn, user: who }); }
     if (p === '/api/account/cookies' && req.method === 'POST') {

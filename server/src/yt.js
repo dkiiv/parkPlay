@@ -6,6 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
+const PREFETCH_CONCURRENCY = 4; // yt-dlp is ~0.7 core for ~3 s each; the LXC has 6 vCPU
+
 const FEEDS = {
   home: ':ytrec',
   subs: ':ytsubs',
@@ -134,7 +136,8 @@ class YT {
     if (!force && this.inflight.has(key)) return this.inflight.get(key);
     const p = (async () => {
       const ck = await this.cookieArgs();
-      const d = await this.run([...ck, '-J', '--skip-download', `https://www.youtube.com/watch?v=${id}`], 60000);
+      // skip=hls,translated_subs: we only use https DASH formats; saves ~0.4 s per resolve
+      const d = await this.run([...ck, '-J', '--skip-download', '--extractor-args', 'youtube:skip=hls,translated_subs', `https://www.youtube.com/watch?v=${id}`], 60000);
       if (d.is_live) throw new Error('live streams are not supported yet');
       const ok = (f) => f.protocol === 'https' && f.url && f.filesize;
       const video = d.formats.filter((f) => ok(f) && /^avc1/.test(f.vcodec || '') && (f.acodec === 'none' || !f.acodec))
@@ -156,25 +159,33 @@ class YT {
     return p;
   }
 
-  // Resolve the first few items of a feed in the background (one at a time, newest list wins), so
-  // a tap on a thumbnail skips the 3-6 s yt-dlp resolve. `warm(d)` (optional) is called for the
-  // first nWarm items to pull their first media chunk (init + sidx), hiding googlevideo's ~4 s
-  // cold first byte.
-  prefetch(items, n = 4, warm = null, nWarm = 2) {
-    const ids = (items || []).filter((v) => v && v.id && !v.live && /^[\w-]{11}$/.test(v.id)).slice(0, n).map((v) => v.id);
-    this.prefetchQueue = ids;
-    if (this.prefetching) return;
-    this.prefetching = true;
-    (async () => {
-      while (this.prefetchQueue.length) {
-        const id = this.prefetchQueue.shift();
-        const hit = this.resolveCache.get(id);
-        const first = ids.indexOf(id) < nWarm;
-        if (hit && Date.now() - hit.at < 2 * 3600e3 && !first) continue;
-        try { const d = await this.resolve(id); if (first && warm) warm(d); } catch (e) { /* surfaced when the user actually taps it */ }
-      }
-    })().finally(() => { this.prefetching = false; });
+  // Background resolve of what the user is about to tap, so a tap skips the ~3 s yt-dlp resolve.
+  // Called with each feed's first items and with the cards the car reports as on screen. Newest
+  // call wins (replaces the queue); PREFETCH_CONCURRENCY yt-dlp processes at a time (~2 CPU-s
+  // each). `warm(d)` runs for the first `nWarm` ids of a call to pull their first media chunk,
+  // hiding googlevideo's slow first byte.
+  prefetch(items, n = 6, warm = null, nWarm = 2) {
+    const ids = (items || []).map((v) => (typeof v === 'string' ? { id: v } : v))
+      .filter((v) => v && v.id && !v.live && /^[\w-]{11}$/.test(v.id)).slice(0, n).map((v) => v.id);
+    this.prefetchQueue = ids.map((id, i) => ({ id, warm: i < nWarm ? warm : null }));
+    this.prefetchWorkers = this.prefetchWorkers || 0;
+    while (this.prefetchWorkers < PREFETCH_CONCURRENCY && this.prefetchQueue.length) {
+      this.prefetchWorkers++;
+      (async () => {
+        while (this.prefetchQueue.length) {
+          const { id, warm: w } = this.prefetchQueue.shift();
+          const hit = this.resolveCache.get(id);
+          const fresh = hit && Date.now() - hit.at < 2 * 3600e3;
+          if (fresh && !w) continue;
+          try { const d = await this.resolve(id); if (w) w(d); } catch (e) { /* surfaced when the user actually taps it */ }
+        }
+      })().finally(() => { this.prefetchWorkers--; });
+    }
   }
+
+  // A real tap: stop starting background work so the tapped video gets the CPU and bandwidth.
+  // In-flight resolves finish (and the tap joins its own if it was already running).
+  cancelPrefetch() { this.prefetchQueue = []; }
 
   async format(id, itag) {
     const d = await this.resolve(id);
