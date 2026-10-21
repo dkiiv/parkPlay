@@ -1,7 +1,8 @@
 {
   "name": "teslatv",
   "version": "0.1.0",
-  "description": "Remote Chrome for the Tesla in-car browser: canvas (JSMpeg) video + touch/keyboard passthrough",
+  "description": "Self-hosted YouTube player for the Tesla in-car browser: WebCodecs canvas playback, yt-dlp backend, ticketed media proxy",
+  "author": "dkiiv (https://github.com/dkiiv)",
   "main": "src/index.js",
   "private": true,
   "license": "MIT",

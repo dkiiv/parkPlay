@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Kiosk session: Xvfb + PulseAudio null sink + Chrome with CDP on localhost.
+# This is the v1 remote browser; in v2 it is only used for the one-time Google/YouTube sign-in
+# at /signin (the server exports the YouTube cookies from this profile for yt-dlp).
 # Run by teslatv-session.service as the unprivileged `teslatv` user.
 set -euo pipefail
 

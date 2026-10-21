@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Push the working tree to the TeslaTV host and restart the web service.
-#   ./tools/push.sh [ssh-host]        (default: $TV_HOST, else "parkplay")
+#   ./tools/push.sh [ssh-host]        (default: $TV_HOST, else "teslatv")
 set -euo pipefail
-HOST=${1:-${TV_HOST:-parkplay}}
+HOST=${1:-${TV_HOST:-teslatv}}
 cd "$(dirname "$0")/.."
 tar czf - --exclude node_modules --exclude web/generated . | ssh "$HOST" \
   'set -e; rm -rf /tmp/teslatv-src; mkdir -p /tmp/teslatv-src; tar xzf - -C /tmp/teslatv-src;

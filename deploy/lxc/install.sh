@@ -7,6 +7,10 @@
 #   ./deploy/lxc/install.sh
 # TV_TUNNEL_TOKEN_FILE: token of a remotely-managed Cloudflare Tunnel whose ingress maps
 # TV_PUBLIC_HOST -> http://localhost:8090. Copied to /etc/cloudflared/teslatv.token.
+# Not installed here: yt-dlp (needed by the v2 player). Put a current release in /usr/local/bin.
+# Third-party software this script installs or downloads (Google Chrome, uBlock Origin Lite,
+# cloudflared, distro packages) is not part of TeslaTV and keeps its own license; see
+# THIRD_PARTY_NOTICES.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
@@ -51,6 +55,8 @@ G=web/generated; mkdir -p "$G"
 [ -s $G/probe-tone.mp3 ] || ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=660:sample_rate=44100" -t 10 \
   -c:a libmp3lame -b:a 96k $G/probe-tone.mp3
 
+# uBlock Origin Lite (GPL-3.0) is downloaded unmodified from its GitHub releases at install
+# time; it is not bundled in this repository.
 echo "== uBlock Origin Lite (MV3, unpacked)"
 UBOL=/var/lib/teslatv/extensions/ublock-lite
 if [ ! -f "$UBOL/manifest.json" ]; then

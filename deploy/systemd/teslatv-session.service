@@ -1,5 +1,5 @@
 [Unit]
-Description=TeslaTV kiosk session (Xvfb + PulseAudio + Chrome)
+Description=TeslaTV kiosk session (Xvfb + PulseAudio + Chrome, used for sign-in)
 After=network-online.target
 Wants=network-online.target
 

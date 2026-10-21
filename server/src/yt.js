@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const PREFETCH_CONCURRENCY = 4; // yt-dlp is ~0.7 core for ~3 s each; the LXC has 6 vCPU
+const PREFETCH_CONCURRENCY = 4; // each yt-dlp resolve uses ~0.7 core for ~3 s; sized for a 4-6 vCPU host
 
 const FEEDS = {
   home: ':ytrec',

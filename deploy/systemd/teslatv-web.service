@@ -1,8 +1,7 @@
 [Unit]
-Description=TeslaTV web server (stream + input bridge)
+Description=TeslaTV web server (UI/API, media proxy, sign-in stream)
 After=teslatv-session.service
-Requires=teslatv-session.service
-PartOf=teslatv-session.service
+Wants=teslatv-session.service
 
 [Service]
 User=teslatv

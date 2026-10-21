@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Backend + player end-to-end test, run ON the host (bypasses Access by calling the APP
-// handlers through a local stub? No: it talks to the real listeners using a forged-but-valid
-// Access identity is impossible, so it exercises the pieces directly):
+// Backend + player end-to-end test, run ON the host. The APP listener needs a real Cloudflare
+// Access identity, so this exercises the pieces directly instead:
 //   1) YT search / resolve via the server modules
 //   2) media byte-range reads through the STREAM listener with a real ticket (+ cache timing)
 //   3) player in a headless Chrome page served locally, decoding real video+audio

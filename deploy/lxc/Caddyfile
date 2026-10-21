@@ -2,6 +2,8 @@
 # Serves ONLY the stream hostname. The VPS forwards TCP 80/443 here over WireGuard, so TLS
 # terminates on this host (Let's Encrypt) and the VPS only sees ciphertext.
 # The UI hostname is NOT served here: it goes through cloudflared + Cloudflare Access.
+# /media/* (v2 player media) must stay in @media, or every video 404s in the car.
+# /ws/video and /audio.mp3 are the v1 sign-in view.
 {
 	email {$TV_ACME_EMAIL}
 }

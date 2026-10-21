@@ -1,6 +1,27 @@
+# dependencies
 node_modules/
+
+# generated at install time (probe test clips)
 web/generated/
+
+# configuration and secrets: never commit real env files, keys or tokens
 *.env
 !*.env.example
-*.key
 local.env
+*.key
+*.pem
+*.token
+*.pub
+wg-home.conf
+wg-tv.conf
+
+# runtime state that may contain account data (cookies, probe reports, media cache)
+cookies*.txt
+/probe/
+/media/
+chrome-profile/
+
+# test output and logs
+ui-*.png
+*.log
+.DS_Store

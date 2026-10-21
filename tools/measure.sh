@@ -1,6 +1,6 @@
 #!/bin/bash
 # measure YouTube decode/render health in the kiosk for ~15s while a stream viewer is attached
-cd /opt/teslatv
+cd "$(dirname "$0")/.."
 URL=${1:-https://www.youtube.com/watch?v=aqz-KE-bpKQ}
 node tools/cdp-eval.js "location.href='$URL'" >/dev/null
 sleep 10

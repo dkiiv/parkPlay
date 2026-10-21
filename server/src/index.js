@@ -1,9 +1,11 @@
 'use strict';
 // teslatv server. Two listeners:
 //   APP    (TV_PORT, 127.0.0.1:8090)        reached ONLY via cloudflared -> Cloudflare Access.
-//          Every request must carry a valid Access JWT. Serves the UI, /ws/ctl, /api/ticket, /probe.
+//          Every request must carry a valid Access JWT. Serves the UI, /signin, /api/*, /ws/ctl,
+//          /probe.
 //   STREAM (TV_STREAM_PORT, 127.0.0.1:8091) reached via Caddy on the direct (non-Cloudflare)
-//          stream hostname. Only /ws/video and /audio.mp3, gated by a short-lived HMAC ticket
+//          stream hostname. Only /media/* (v2 player), /ws/video + /audio.mp3 (sign-in browser)
+//          and /healthz; media paths are gated by a short-lived HMAC ticket
 //          that the APP side hands out after Access auth. Video never touches Cloudflare.
 const fs = require('fs');
 // Outbound (googlevideo, YouTube): many hosts without a working IPv6 route still get AAAA
