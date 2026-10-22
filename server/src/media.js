@@ -30,6 +30,20 @@ class Media {
   cfile(id, itag, ci) { return path.join(this.cdir(id, itag), String(ci)); }
   has(id, itag, ci) { return fs.existsSync(this.cfile(id, itag, ci)); }
 
+  // YouTube re-encodes formats in place (same itag, new bytes; dub suffixes like 140-3 can also
+  // point at a different language track later). Chunks from two encodings must never mix: the
+  // segment index lives in chunk 0, so a stale chunk 0 makes every offset point at garbage.
+  // Each itag dir records the encoding it holds (lmt + size); a mismatch wipes the dir.
+  static ver(f) { let lmt = ''; try { lmt = new URL(f.url).searchParams.get('lmt') || ''; } catch { /* no url */ } return `${lmt}:${f.size}`; }
+  checkVer(id, itag, f) {
+    const d = this.cdir(id, itag), vf = path.join(d, '.ver'), want = Media.ver(f);
+    let have = null; try { have = fs.readFileSync(vf, 'utf8'); } catch { /* none */ }
+    if (have === want) return true;
+    if (fs.existsSync(d)) { fs.rmSync(d, { recursive: true, force: true }); this.log(`media cache: ${id}/${itag} encoding changed (${have || 'unversioned'} -> ${want}), dropped stale chunks`); }
+    fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(vf, want);
+    return false;
+  }
+
   async upstream(id, itag, start, end, retry = true) {
     const f = await this.yt.format(id, itag);
     if (!f) throw new Error('unknown format');
@@ -77,7 +91,13 @@ class Media {
       const p = (async () => {
         const s = a * CHUNK;
         const e = Math.min((b + 1) * CHUNK, size) - 1;
+        const ver0 = Media.ver(await this.yt.format(id, itag));
         const buf = await this.upstream(id, itag, s, e);
+        // upstream() may have re-resolved onto a new encoding (403 -> resolve): don't write those
+        // bytes under the old version; the next read() sees the new version and starts clean.
+        const fNow = await this.yt.format(id, itag);
+        if (!fNow || Media.ver(fNow) !== ver0) throw new Error('format changed during fetch');
+        this.checkVer(id, itag, fNow);
         for (let c = a; c <= b; c++) {
           const part = buf.subarray((c - a) * CHUNK, Math.min((c - a + 1) * CHUNK, buf.length));
           const tmp = this.cfile(id, itag, c) + '.tmp';
@@ -94,6 +114,7 @@ class Media {
     const f = await this.yt.format(id, itag);
     if (!f) throw new Error('unknown format');
     const size = f.size;
+    this.checkVer(id, itag, f);
     if (start >= size) return { buf: Buffer.alloc(0), size };
     end = Math.min(end, size - 1, start + 16 * CHUNK - 1);
     const c0 = Math.floor(start / CHUNK);
@@ -140,7 +161,7 @@ class Media {
       const vids = fs.readdirSync(this.dir).map((id) => {
         const d = path.join(this.dir, id);
         let bytes = 0;
-        for (const itag of fs.readdirSync(d)) for (const c of fs.readdirSync(path.join(d, itag))) bytes += fs.statSync(path.join(d, itag, c)).size;
+        for (const itag of fs.readdirSync(d)) for (const c of fs.readdirSync(path.join(d, itag))) if (c !== '.ver') bytes += fs.statSync(path.join(d, itag, c)).size;
         return { id, d, bytes, mtime: fs.statSync(d).mtimeMs };
       }).sort((a, b) => a.mtime - b.mtime);
       let total = vids.reduce((s, v) => s + v.bytes, 0);
