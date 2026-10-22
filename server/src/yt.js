@@ -160,8 +160,12 @@ class YT {
         .map((f) => ({ itag: f.format_id, height: f.height, fps: f.fps, size: f.filesize, codec: f.vcodec, url: f.url, headers: f.http_headers || {} }))
         .sort((a, b) => a.height - b.height || a.size - b.size);
       const audio = d.formats.filter((f) => ok(f) && f.ext === 'm4a' && f.vcodec === 'none' && /^mp4a/.test(f.acodec || '') && !/drc/.test(f.format_id))
-        .map((f) => ({ itag: f.format_id, size: f.filesize, codec: f.acodec, abr: f.abr, url: f.url, headers: f.http_headers || {} }))
-        .sort((a, b) => (b.abr || 0) - (a.abr || 0));
+        .map((f) => ({ itag: f.format_id, size: f.filesize, codec: f.acodec, abr: f.abr, lang: f.language || null,
+          // YouTube auto-dubs share the itag (140-0, 140-1, ...) at near-identical bitrates; the original track
+          // has language_preference 10 / "original" in format_note, dubs are -1. Prefer original, then bitrate.
+          pref: (f.language_preference || 0) + (/original/i.test(f.format_note || '') ? 100 : 0),
+          url: f.url, headers: f.http_headers || {} }))
+        .sort((a, b) => (b.pref - a.pref) || ((b.abr || 0) - (a.abr || 0)));
       if (!video.length || !audio.length) throw new Error('no H.264/AAC formats for this video');
       const data = {
         id, title: d.title, channel: d.channel || d.uploader, channelUrl: d.channel_url || d.uploader_url,
