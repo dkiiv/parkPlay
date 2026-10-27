@@ -165,14 +165,25 @@
   }
 
   function startPlayer(meta, at) {
+    if (pending) { pending.destroy(); pending = null; }
     if (player) player.destroy();
     const cv = $('screen');
     const fresh = cv.cloneNode(false); cv.parentNode.replaceChild(fresh, cv);
-    player = new window.TVPlayer(fresh, {
-      meta, mediaBase: ticket.audio, ticket: () => ticket.ticket,
-      maxHeight: quality, aheadSec: 120,
+    player = makePlayer(fresh, meta, quality);
+    const me = player;
+    player.start(at).catch((e) => { if (me.dead) return; spinner(null); toast('Playback error: ' + e.message, 6000); });
+  }
+
+  // Callbacks only act for the player that is on screen (a quality-switch candidate stays quiet).
+  function makePlayer(canvas, meta, maxHeight, audioCtx) {
+    let me = null;
+    const live = () => player === me;
+    me = new window.TVPlayer(canvas, {
+      meta, mediaBase: ticket.audio, ticket: () => ticket.ticket, audioCtx,
+      maxHeight, aheadSec: 120,
       log: (m) => console.log('[player]', m),
       onState: (s) => {
+        if (!live()) return;
         if (s === 'loading' || s === 'buffering') spinner(s === 'loading' ? 'Loading' : 'Buffering');
         else spinner(null);
         $('w-play-ic').setAttribute('href', s === 'paused' ? '#i-play' : '#i-pause');
@@ -180,18 +191,47 @@
         if (s === 'paused' || s === 'ended') showOverlay(true);
       },
       onTime: (ct, dur, ahead) => {
-        if (dragging) return;
+        if (!live() || dragging) return;
         $('t-cur').textContent = fmtTime(ct); $('t-dur').textContent = fmtTime(dur);
         setFill(dur ? ct / dur : 0, dur ? Math.min(1, (ct + ahead) / dur) : 0);
         $('w-buf').textContent = ahead > 1 ? `${Math.round(ahead)} s buffered` : '';
       },
-      onError: (m) => { spinner(null); toast('Playback error: ' + m, 6000); },
+      onError: (m) => { if (!live()) return; spinner(null); toast('Playback error: ' + m, 6000); },
     });
-    const me = player;
-    player.start(at).catch((e) => { if (me.dead) return; spinner(null); toast('Playback error: ' + e.message, 6000); });
+    return me;
+  }
+
+  // Automatic quality change without a gap: the current player plays out its buffer while the new
+  // one loads from where that buffer ends (Player.handoff).
+  let pending = null;
+  function switchQuality(h, msg) {
+    if (!player || pending) return;
+    const old = player;
+    const cv = $('screen'), fresh = cv.cloneNode(false);
+    const next = makePlayer(fresh, old.meta, h, old.audioCtx);
+    next.setVolume(old.volume);
+    pending = next;
+    toast(msg, 4000);
+    $('w-q').value = String(h);
+    old.handoff(next, () => {
+      pending = null;
+      if (player !== old) { next.destroy(); return; }
+      const cur = $('screen'); cur.parentNode.replaceChild(fresh, cur);
+      player = next; badWindows = 0;
+      if (next.state === 'loading' || next.state === 'buffering') spinner('Buffering');
+    }).catch((e) => { if (next.dead) return; spinner(null); toast('Playback error: ' + e.message, 6000); });
+  }
+
+  // A user seek while an automatic switch is pending cancels it: the outgoing player has stopped
+  // fetching and the incoming one is parked at the old buffer end. Keep the shared AudioContext.
+  function cancelSwitch() {
+    if (!pending) return;
+    pending.keepCtx = true; pending.destroy(); pending = null;
+    if (player) { player.noFetch = false; player.keepCtx = false; }
   }
 
   function closeWatch() {
+    if (pending) { pending.destroy(); pending = null; }
     if (player) { reportStats(); player.destroy(); player = null; }
     curVideo = null;
     $('watch').classList.add('hidden');
@@ -207,9 +247,9 @@
 
   $('w-back').onclick = () => { if (location.hash.startsWith('#watch')) history.back(); else closeWatch(); };
   window.addEventListener('popstate', () => { if (!location.hash.startsWith('#watch') && curVideo) closeWatch(); });
-  $('w-play').onclick = (e) => { e.stopPropagation(); if (player) { if (player.state === 'ended') player.seek(0).then(() => player.play()); else player.togglePause(); } showOverlay(); };
-  $('w-rew').onclick = (e) => { e.stopPropagation(); if (player) player.seek(player.currentTime() - 10); showOverlay(); };
-  $('w-fwd').onclick = (e) => { e.stopPropagation(); if (player) player.seek(player.currentTime() + 10); showOverlay(); };
+  $('w-play').onclick = (e) => { e.stopPropagation(); if (player) { if (player.state === 'ended') cancelSwitch(); if (player.state === 'ended') player.seek(0).then(() => player.play()); else player.togglePause(); } showOverlay(); };
+  $('w-rew').onclick = (e) => { e.stopPropagation(); cancelSwitch(); if (player) player.seek(player.currentTime() - 10); showOverlay(); };
+  $('w-fwd').onclick = (e) => { e.stopPropagation(); cancelSwitch(); if (player) player.seek(player.currentTime() + 10); showOverlay(); };
   $('w-full').onclick = (e) => { e.stopPropagation(); document.body.classList.toggle('full'); showOverlay(); };
   $('w-q').onchange = (e) => {
     quality = Number(e.target.value); localStorage.setItem('tv.q', quality);
@@ -226,7 +266,7 @@
   function seekFrac(e) { const r = $('seek').getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); }
   $('seek').addEventListener('pointerdown', (e) => { if (!player) return; dragging = true; $('seek').setPointerCapture(e.pointerId); const f = seekFrac(e); setFill(f, 0); $('t-cur').textContent = fmtTime(f * player.duration()); showOverlay(true); e.stopPropagation(); });
   $('seek').addEventListener('pointermove', (e) => { if (!dragging) return; const f = seekFrac(e); setFill(f, 0); $('t-cur').textContent = fmtTime(f * player.duration()); });
-  $('seek').addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; player.seek(seekFrac(e) * player.duration()); showOverlay(); });
+  $('seek').addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; cancelSwitch(); player.seek(seekFrac(e) * player.duration()); showOverlay(); });
 
   // ---------- stats to server (diagnose lag without being in the car) ----------
   // Every 15 s: totals plus the last window's deltas (drop % is per window, so a bad stretch shows).
@@ -238,9 +278,13 @@
     const win = { drawn: dDrawn, dropped: dDrop, dropPct: dDrawn + dDrop ? Math.round(100 * dDrop / (dDrawn + dDrop)) : 0, late: s.late - (p ? p.late : 0),
       rafHz: Math.round(dRaf / 15), drawMsAvg: dDrawn ? +((s.drawMs - (p ? p.drawMs : 0)) / dDrawn).toFixed(2) : 0, rafGapMax: s.rafGapMax, vqMax: s.vqMax };
     s.rafGapMax = 0; s.vqMax = 0;
-    prevStats = { id: player.meta.id, gen: player, drawn: s.drawn, dropped: s.dropped, rafs: s.rafs, late: s.late, drawMs: s.drawMs };
+    const n = player.netSample ? player.netSample() : { bytes: 0, busyMs: 0 };
+    const dBusy = n.busyMs - (p ? p.busyMs : 0), dBytes = n.bytes - (p ? p.bytes : 0);
+    win.kbps = dBusy > 500 ? Math.round(dBytes * 8 / dBusy) : null; // goodput while fetching (null = idle)
+    win.stalls = s.stalls - (p ? p.stalls : 0);
+    prevStats = { id: player.meta.id, gen: player, drawn: s.drawn, dropped: s.dropped, rafs: s.rafs, late: s.late, drawMs: s.drawMs, busyMs: n.busyMs, bytes: n.bytes, stalls: s.stalls };
     const v = player.vfmt || {};
-    const body = JSON.stringify({ id: player.meta.id, q: v.height, fps: v.fps, hw: s.hw, canvas: [player.canvas.width, player.canvas.height], state: player.state, t: Math.round(player.currentTime()), ahead: Math.round(player.bufferedAhead()), drawn: s.drawn, dropped: s.dropped, stalls: s.stalls, mb: +(s.fetched / 1e6).toFixed(1), startMs: s.startMs, indexMs: s.indexMs, win });
+    const body = JSON.stringify({ id: player.meta.id, q: v.height, fps: v.fps, needKbps: player.mediaKbps ? Math.round(player.mediaKbps()) : null, hw: s.hw, canvas: [player.canvas.width, player.canvas.height], state: player.state, t: Math.round(player.currentTime()), ahead: Math.round(player.bufferedAhead()), drawn: s.drawn, dropped: s.dropped, stalls: s.stalls, mb: +(s.fetched / 1e6).toFixed(1), startMs: s.startMs, indexMs: s.indexMs, win });
     try { navigator.sendBeacon('/api/stats', body); } catch (e) { /* ignore */ }
     autoQuality(win);
   }
@@ -252,6 +296,8 @@
   // lower resolution, so they never trigger this. The saved preference is untouched.
   const LEVELS = [360, 480, 720, 1080];
   function autoQuality(win) {
+    if (pending) return;
+    if (netStepDown(win)) return;
     const fps = (player && player.vfmt && player.vfmt.fps) || 30;
     const decodedPerSec = (win.drawn + win.dropped) / 15;
     if (!player || player.state !== 'playing' || decodedPerSec < fps * 0.5) { badWindows = 0; return; }
@@ -262,12 +308,17 @@
     const cur = (player.vfmt && player.vfmt.height) || quality;
     const lower = LEVELS.filter((h) => h < cur).pop();
     if (!lower) return;
-    toast(`Video was choppy: switched to ${lower}p`, 4000);
-    $('w-q').value = String(lower);
-    const at = player.currentTime(), meta = player.meta;
-    startPlayerAt(meta, at, lower);
+    switchQuality(lower, `Video was choppy: switching to ${lower}p`);
   }
-  function startPlayerAt(meta, at, h) { const keep = quality; quality = h; startPlayer(meta, at); quality = keep; }
+  // Network step-down (decision in Player.netStepDown): the link delivers less than the stream
+  // needs AND the buffer is in trouble. One level per decision; the saved preference is untouched.
+  function netStepDown(win) {
+    if (!player || !player.netStepDown) return false;
+    const lower = player.netStepDown(win.kbps, win.stalls, LEVELS);
+    if (!lower) return false;
+    switchQuality(lower, `Slow connection: switching to ${lower}p`);
+    return true;
+  }
 
   // ---------- boot ----------
   if (!CAN_PLAY) toast('This browser has no WebCodecs: browsing only', 6000);

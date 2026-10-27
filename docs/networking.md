@@ -112,3 +112,19 @@ ExecStop=/bin/bash /usr/bin/wg-quick down %i
 
 The LXC also needs `/dev/net/tun` passed through (`lxc.cgroup2.devices.allow: c 10:200 rwm`
 plus the mount entry), and the WireGuard kernel module must be loaded on the **host**.
+
+## TCP congestion control: use BBR
+
+The media TCP connection runs end to end from Caddy to the car (the VPS only forwards it), so the
+server's congestion control decides how it copes with the car's LTE: 130+ ms base RTT, spikes to
+~500 ms, loss and heavy reordering. Cubic backs off hard on every loss; BBR paces by measured
+bandwidth and RTT and holds far more throughput on such a link. In a container the setting is per
+network namespace, but the module has to be loaded on the **host**:
+
+```bash
+# host
+modprobe tcp_bbr && echo tcp_bbr > /etc/modules-load.d/bbr.conf
+# server / container
+echo 'net.ipv4.tcp_congestion_control = bbr' > /etc/sysctl.d/90-parkplay-bbr.conf
+sysctl -p /etc/sysctl.d/90-parkplay-bbr.conf
+```

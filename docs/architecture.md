@@ -16,6 +16,9 @@ car: index.html + app.js        local UI: rail (Home/Subs/History/Later/Account)
      player.js + fmp4.js        fetches DASH fMP4 byte ranges (sidx index -> segments), demuxes,
                                 VideoDecoder -> <canvas>, AudioDecoder -> Web Audio. The audio
                                 clock is the master clock. Canvas + Web Audio keep playing in Drive.
+                                Range fetches resume after an interruption (abandoned only after
+                                12 s with no bytes); a stall keeps the downloaded segments and waits
+                                for a 10-30 s cushion; a link slower than the stream steps quality down.
         │ JSON: /api/* (Access)                         │ bytes: /media/<id>/<itag>?t=<ticket>
         ▼                                               ▼  (stream hostname, ticket + Origin)
 server: yt.js    yt-dlp: feeds, search, resolve (H.264 video-only + AAC m4a formats), 3 h cache,

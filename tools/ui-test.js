@@ -215,6 +215,19 @@ const srv = http.createServer(async (req, res) => {
   check('pause button', c0 === c1 && icon === '#i-play', `time ${c0} -> ${c1}, icon ${icon}`);
   await tap('#w-play'); await sleep(300);
 
+  // 7b) network step-down through app.js (switchQuality + Player.handoff): force one decision and
+  // check the toast, the quality select, the new canvas size and that the clock keeps running.
+  await ev(`(()=>{const f=TVPlayer.prototype.netStepDown;TVPlayer.prototype.netStepDown=function(k,s,l){if(!window.__sd){window.__sd=1;return 360;}return f.call(this,k,s,l)};return 1})()`);
+  t = await until(`(document.getElementById('toast').textContent||'').startsWith('Slow connection')`, 20000);
+  const sw0 = await ev(`document.getElementById('t-cur').textContent`);
+  const t2 = await until(`document.getElementById('screen').height===360`, 150000); // gapless: waits for the old buffer to play out
+  // the new player loads from a cold cache here (fresh in-process server), so allow it to rebuffer
+  const t3 = await until(`document.getElementById('spinner').classList.contains('hidden')`, 30000);
+  const swA = await ev(`document.getElementById('t-cur').textContent`); await sleep(2500);
+  const sw = await ev(`({q:document.getElementById('w-q').value,h:document.getElementById('screen').height,cur:document.getElementById('t-cur').textContent,spin:!document.getElementById('spinner').classList.contains('hidden')})`);
+  check('network step-down (gapless switch)', t >= 0 && t2 >= 0 && t3 >= 0 && sw.q === '360' && sw.cur !== swA && sw.cur !== sw0 && !sw.spin, `toast after ${t} ms, canvas 360 after ${t2} ms, playing ${t3} ms after the swap, ${JSON.stringify(sw)} (was ${sw0})`);
+  if (!(await ev(`document.getElementById('overlay').classList.contains('show')`))) { await tap('#screen'); await sleep(300); }
+
   // 8) back returns to the results grid, player torn down
   await tap('#w-back');
   t = await until(`document.getElementById('watch').classList.contains('hidden') && !document.getElementById('browse').classList.contains('hidden')`, 3000);

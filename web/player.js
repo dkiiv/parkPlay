@@ -12,7 +12,12 @@
 (function () {
   'use strict';
 
-  const FETCH_TIMEOUT = 20000;
+  // A request is only abandoned when NO bytes arrive for STALL_TIMEOUT (or no headers for
+  // HEAD_TIMEOUT). Bytes already received are kept and the retry resumes from there: on a slow
+  // LTE link a hard total timeout discarded every partial segment and re-requested it from byte 0
+  // forever (no progress at all while ~0.3 Mbit/s was still arriving).
+  const HEAD_TIMEOUT = 20000;
+  const STALL_TIMEOUT = 12000;
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
@@ -29,7 +34,7 @@
       this.vq = [];              // decoded VideoFrames waiting to be drawn (sorted by ts)
       this.paused = false;
       this.rate = 1;
-      this.stats = { fetched: 0, dropped: 0, drawn: 0, stalls: 0, startMs: 0, decoded: 0, late: 0, drawMs: 0, rafs: 0, rafGapMax: 0, vqMax: 0 };
+      this.stats = { netBytes: 0, netBusyMs: 0, fetched: 0, dropped: 0, drawn: 0, stalls: 0, startMs: 0, decoded: 0, late: 0, drawMs: 0, rafs: 0, rafGapMax: 0, vqMax: 0 };
       this.raf = 0;
       this.audioCtx = null;
       this.gain = null;
@@ -39,7 +44,9 @@
     // ---------- public API ----------
     async start(atSec) {
       this.chooseFormats();
-      this.audioCtx = this.audioCtx || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+      // o.audioCtx: reuse the previous player's context on a quality switch (a new context created
+      // without a user gesture may stay suspended under the autoplay policy)
+      this.audioCtx = this.audioCtx || this.o.audioCtx || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
       if (this.audioCtx.state === 'suspended') await this.audioCtx.resume().catch(() => {});
       this.gain = this.gain || this.audioCtx.createGain();
       this.gain.connect(this.audioCtx.destination);
@@ -64,11 +71,24 @@
       const vi = this.segIndexAt(sec);
       this.vNext = vi;           // next segment to fetch
       this.vDecodeFrom = sec;
+      // Keep segments already downloaded (or in flight) that are still useful from `sec`: a
+      // rebuffer used to throw the whole buffer away and download it again over the car's LTE.
+      const inWin = (seg) => seg.t + seg.dur > sec && seg.t - sec < this.o.aheadSec;
+      const oldV = this.vSegs;
       this.vSegs = new Map();    // idx -> Promise<samples> (fetch cache, also prefetch)
+      if (oldV) for (const [i, p] of oldV) if (i >= vi && inWin(this.vIndex.segments[i])) this.vSegs.set(i, p);
+      if (this.vLast && this.vLast.i === vi && !this.vSegs.has(vi)) this.vSegs.set(vi, this.vLast.p);
+      // after a stall, wait for a real cushion before restarting the clock (else it stalls again at once)
+      this.needAhead = this.rebuffering ? Math.min(30, 10 + 5 * Math.max(0, this.stats.stalls - 1)) : 0;
+      this.rebuffering = false;
       this.vdec && this.vdec.state !== 'closed' && this.vdec.close();
       this.makeVideoDecoder();
       // audio: start from the AAC frame at sec
       this.aNext = this.aSegIndexAt(sec);
+      this.aKeep = new Map();
+      if (this.aSegs) for (const [i, ent] of this.aSegs) if (i >= this.aNext && inWin(this.aIndex.segments[i])) this.aKeep.set(i, ent);
+      // decoded-but-unplayed audio is dropped by stopAudio(); its downloaded bytes are kept in aDone
+      if (this.aDone) for (const [i, ent] of this.aDone) if (i >= this.aNext && inWin(this.aIndex.segments[i]) && !this.aKeep.has(i)) this.aKeep.set(i, ent);
       this.aEnded = false;
       this.adec && this.adec.state !== 'closed' && this.adec.close();
       this.makeAudioDecoder();
@@ -101,6 +121,41 @@
       return Math.max(0, Math.min(v, a));
     }
 
+    // Seamless quality switch. `next` is a new, not yet started Player (sharing this audioCtx). It
+    // starts at the end of this player's buffer and holds there while this one plays out what it
+    // already downloaded (no more fetching here, so the link is all next's). At the boundary, or
+    // if this player stalls first, onSwap() runs and next takes over. With little buffered it
+    // just cuts over at the current time.
+    handoff(next, onSwap) {
+      const ct = this.currentTime(), ahead = this.bufferedAhead();
+      this.keepCtx = true;
+      if (ahead < 6 || this.state !== 'playing') {
+        this.destroy(); onSwap && onSwap(); return next.start(ct);
+      }
+      this.noFetch = true;
+      // Abort this player's in-flight downloads: they are past the switch point (B is the end of the
+      // contiguous buffer) and would otherwise hog a slow link for a minute while `next` starves.
+      for (const ac of this.acs || []) ac.abort();
+      const B = ct + ahead - 1;
+      // same audio track in both: hand over the audio already downloaded (it runs far past B)
+      // instead of fetching it again; seek() in next keeps the entries from B on
+      next.aSegs = new Map([...(this.aDone || []), ...(this.aSegs || [])].filter(([, e]) => !e.loading));
+      next.hold = true;
+      const started = next.start(B);
+      return new Promise((resolve) => {
+        const iv = setInterval(() => {
+          if (next.dead) { clearInterval(iv); resolve(); return; }
+          if (this.dead || this.currentTime() >= B - 0.05 || this.state === 'buffering' || this.state === 'error') {
+            clearInterval(iv);
+            if (!this.dead) this.destroy();
+            onSwap && onSwap();
+            next.hold = false;
+            resolve(started);
+          }
+        }, 40);
+      });
+    }
+
     destroy() {
       this.gen++; this.dead = true;
       cancelAnimationFrame(this.raf);
@@ -108,7 +163,8 @@
       this.stopAudio();
       try { this.vdec && this.vdec.state !== 'closed' && this.vdec.close(); } catch (e) { /* closed */ }
       try { this.adec && this.adec.state !== 'closed' && this.adec.close(); } catch (e) { /* closed */ }
-      try { this.audioCtx && this.audioCtx.close(); } catch (e) { /* closed */ }
+      try { this.gain && this.gain.disconnect(); } catch (e) { /* gone */ }
+      try { if (this.audioCtx && !this.keepCtx) this.audioCtx.close(); } catch (e) { /* closed */ }
     }
 
     // ---------- formats ----------
@@ -125,27 +181,85 @@
       this.o.log && this.o.log(`formats video ${this.vfmt.itag} ${this.vfmt.height}p${this.vfmt.fps} ${this.vfmt.codec} audio ${this.afmt.itag}`);
     }
 
+    // Goodput accounting: bytes received / wall time with at least one request open, so idle time
+    // while the buffer is full doesn't count as a slow network. Read via netSample().
+    netBegin() { if (!this.netActive) this.netT0 = performance.now(); this.netActive = (this.netActive || 0) + 1; }
+    netEnd() { this.netActive--; if (!this.netActive) this.stats.netBusyMs += performance.now() - this.netT0; }
+    netSample() { return { bytes: this.stats.netBytes, busyMs: this.stats.netBusyMs + (this.netActive ? performance.now() - this.netT0 : 0) }; }
+    // Recent goodput (kbit/s over the last ~6 s of busy time), null until there is enough data.
+    netKbpsRecent() {
+      const now = performance.now(), n = this.netSample();
+      const h = this.netHist || (this.netHist = []);
+      if (!h.length || now - h[h.length - 1].t > 250) h.push({ t: now, bytes: n.bytes, busyMs: n.busyMs });
+      while (h.length > 2 && now - h[1].t > 6000) h.shift();
+      const a = h[0], dB = n.busyMs - a.busyMs;
+      return dB > 1500 ? (n.bytes - a.bytes) * 8 / dB : null;
+    }
+    // Parallel video requests. Normally 3 (hides the per-request round trip on high-latency LTE).
+    // On a link slower than the stream with a short buffer, 1: parallel requests would split the
+    // link so the segment needed next arrives last.
+    videoParallel() {
+      const k = this.netKbpsRecent();
+      return k != null && k < this.mediaKbps() * 1.3 && this.bufferedAhead() < 30 ? 1 : 3;
+    }
+    // Called every stats window (15 s) with that window's goodput and stall count. Returns the
+    // height to step down to, or 0. A window is bad when the link is slower than 1.25x the stream
+    // AND the buffer, at the drain rate measured since the last window, runs out within 90 s (or
+    // a stall happened). Step down after 2 bad windows, or at once on a stall with the buffer
+    // empty. Using the measured drain (not just kbps vs the average bitrate) avoids dropping to a
+    // lower quality on a link that is a bit slow but still leaves minutes of buffer; deciding while
+    // there is buffer left lets handoff() switch without a gap.
+    netStepDown(kbps, stalls, levels) {
+      const ahead = this.bufferedAhead(), prev = this.prevAhead;
+      this.prevAhead = ahead;
+      if (kbps == null || (this.state !== 'playing' && this.state !== 'buffering')) { this.netBad = 0; return 0; }
+      const slow = kbps < this.mediaKbps() * 1.25;
+      const drain = prev != null ? (prev - ahead) / 15 : 0; // buffer seconds lost per second
+      const runsOut = drain > 0.05 && ahead / drain < 90;
+      this.netBad = slow && (stalls > 0 || runsOut) ? (this.netBad || 0) + 1 : 0;
+      if (!(this.netBad >= 2 || (slow && stalls > 0 && ahead < 5))) return 0;
+      this.netBad = 0;
+      const cur = this.vfmt.height;
+      return levels.filter((h) => h < cur && this.meta.video.some((f) => f.height === h)).pop() || 0;
+    }
+    // average bitrate of the chosen video + audio formats, kbit/s
+    mediaKbps() { const d = this.duration() || 1; return ((this.vfmt && this.vfmt.size || 0) + (this.afmt && this.afmt.size || 0)) * 8 / d / 1000; }
+
     url(f) { return `${this.o.mediaBase}/media/${this.meta.id}/${f.itag}?t=${encodeURIComponent(this.o.ticket())}`; }
 
     async range(f, start, end, tries = 6) {
-      for (let i = 0; i < tries; i++) {
+      const total = end - start + 1;
+      const out = new Uint8Array(total);
+      let got = 0, fails = 0;
+      while (got < total) {
         if (this.dead) throw new Error('destroyed');
         const ac = new AbortController();
-        const to = setTimeout(() => ac.abort(), FETCH_TIMEOUT);
+        let to = setTimeout(() => ac.abort(), HEAD_TIMEOUT);
+        const kick = () => { clearTimeout(to); to = setTimeout(() => ac.abort(), STALL_TIMEOUT); };
+        const before = got;
+        (this.acs || (this.acs = new Set())).add(ac);
+        this.netBegin();
         try {
-          const r = await fetch(this.url(f), { headers: { Range: `bytes=${start}-${end}` }, signal: ac.signal, cache: 'no-store' });
-          if (r.status !== 206 && r.status !== 200) throw new Error('HTTP ' + r.status);
-          const b = new Uint8Array(await r.arrayBuffer());
-          clearTimeout(to);
-          this.stats.fetched += b.byteLength;
-          return b;
+          const r = await fetch(this.url(f), { headers: { Range: `bytes=${start + got}-${end}` }, signal: ac.signal, cache: 'no-store' });
+          if (r.status !== 206 && !(r.status === 200 && start + got === 0)) throw new Error('HTTP ' + r.status);
+          kick();
+          const take = (v) => { const n = Math.min(v.byteLength, total - got); out.set(n === v.byteLength ? v : v.subarray(0, n), got); got += n; this.stats.fetched += n; this.stats.netBytes += n; };
+          if (r.body && r.body.getReader) {
+            const rd = r.body.getReader();
+            while (got < total) { const { done, value } = await rd.read(); if (done) break; kick(); take(value); }
+            if (got >= total) rd.cancel().catch(() => {});
+          } else take(new Uint8Array(await r.arrayBuffer()));
+          if (got < total) throw new Error('short read');
         } catch (e) {
-          clearTimeout(to);
-          this.o.log && this.o.log(`fetch ${f.itag} ${start}-${end} failed (${e.message}), retry ${i + 1}`);
-          await sleep(Math.min(8000, 500 * 2 ** i));
-        }
+          if (this.noFetch) throw new Error('handoff'); // aborted by handoff(): bytes past the switch point are useless
+          fails = got > before ? 0 : fails + 1; // progress resets the retry budget
+          this.o.log && this.o.log(`fetch ${f.itag} ${start}-${end} interrupted at ${got}/${total} (${e.message}), retry ${fails}`);
+          if (this.dead) throw new Error('destroyed');
+          if (fails >= tries) throw new Error('network: gave up fetching media');
+          if (fails) await sleep(Math.min(8000, 500 * 2 ** (fails - 1)));
+        } finally { clearTimeout(to); this.acs.delete(ac); this.netEnd(); }
       }
-      throw new Error('network: gave up fetching media');
+      return out;
     }
 
     // ---------- video ----------
@@ -207,13 +321,14 @@
     async prefetchVideo(g) {
       const segs = this.vIndex.segments;
       while (g === this.gen && !this.dead) {
+        if (this.noFetch) { await sleep(300); continue; }
         const ct = this.currentTime();
         let inflight = 0, i = this.vNext, contiguousEnd = null;
         for (; i < segs.length && segs[i].t - ct < this.o.aheadSec && segs[i].offset - segs[this.vNext].offset < this.o.aheadBytes; i++) {
           const st = this.vSegState.get(i);
           if (st === 'done') { if (contiguousEnd === i - 1 || contiguousEnd === null && i === this.vNext) contiguousEnd = i; continue; }
           if (st === 'loading') { inflight++; continue; }
-          if (inflight >= 3) break;
+          if (inflight >= this.videoParallel()) break;
           inflight++;
           const k = i; // own binding: `i` is shared across iterations (declared outside the loop)
           this.vSegState.set(k, 'loading');
@@ -231,11 +346,16 @@
     async pumpVideo(g) {
       const segs = this.vIndex.segments;
       this.vSegState = new Map();
+      for (const [k, p] of this.vSegs) { // kept across a rebuffer/seek: re-track under this generation
+        this.vSegState.set(k, 'loading');
+        p.then(() => { if (g === this.gen && this.vSegState.has(k)) this.vSegState.set(k, 'done'); },
+          () => { if (g === this.gen) { this.vSegState.delete(k); this.vSegs.delete(k); } });
+      }
       this.prefetchVideo(g);
       while (g === this.gen && this.vNext < segs.length) {
         if (this.vq.length >= this.o.maxQueued || (this.vdec.decodeQueueSize || 0) > 10) { await sleep(30); continue; }
         let samples;
-        try { samples = await this.fetchSeg(this.vNext); } catch (e) { if (g === this.gen) this.fatal(e.message); return; }
+        try { samples = await this.fetchSeg(this.vNext); } catch (e) { if (g === this.gen && !this.noFetch) this.fatal(e.message); return; } // handoff: run dry quietly
         if (g !== this.gen) return;
         const idx = this.vNext;
         const s = segs[idx];
@@ -245,6 +365,7 @@
           while (g === this.gen && (this.vq.length >= this.o.maxQueued || this.vdec.decodeQueueSize > 10)) await sleep(15);
         }
         this.vDecodedEnd = s.t + s.dur;
+        this.vLast = { i: idx, p: this.vSegs.get(idx) }; // reused if a stall restarts in this segment
         this.vSegs.delete(idx); this.vSegState.delete(idx); // encoded bytes no longer needed
         this.vNext++;
       }
@@ -302,10 +423,14 @@
 
     // Start the clock once both tracks have a cushion (2 s audio decoded + first video frame).
     maybeStartPlayback(g) {
-      if (this.anchor || g !== this.gen) return;
+      if (this.anchor || g !== this.gen || this.hold) return;
       const aReady = this.aPending.length && (this.aFetchedEnd - this.aPending[0].mediaT) >= 2;
       const vReady = this.vq.length > 0 || this.vEnded;
       if (!aReady || !vReady) return;
+      if (this.needAhead) {
+        const need = Math.min(this.needAhead, this.duration() - this.seekTarget - 1);
+        if (need > 0 && this.bufferedAhead() < need) return;
+      }
       const ctx = this.audioCtx;
       const startMedia = Math.max(this.aPending[0].mediaT, this.seekTarget);
       this.anchor = { ctx: ctx.currentTime + 0.15, media: startMedia };
@@ -344,6 +469,7 @@
     async prefetchAudio(g) {
       const segs = this.aIndex.segments;
       while (g === this.gen && !this.dead) {
+        if (this.noFetch) { await sleep(300); continue; }
         const ct = this.currentTime();
         let inflight = 0;
         for (let i = this.aNext; i < segs.length && segs[i].t - ct < this.o.aheadSec; i++) {
@@ -365,7 +491,9 @@
     // Decode side: decode segments in order while decoded audio is < 15 s ahead of the playhead.
     async pumpAudio(g) {
       const segs = this.aIndex.segments;
-      this.aSegs = new Map();
+      this.aSegs = this.aKeep || new Map();
+      this.aKeep = null;
+      for (const [k, ent] of this.aSegs) ent.p.catch(() => { if (g === this.gen) this.aSegs.delete(k); });
       this.aFetchedTo = 0;
       this.prefetchAudio(g);
       while (g === this.gen && !this.dead && this.aNext < segs.length) {
@@ -378,6 +506,11 @@
           if (smp.pts + smp.dur < this.seekTarget - 0.1) continue;
           this.adec.decode(new EncodedAudioChunk({ type: 'key', timestamp: Math.round(smp.pts * 1e6), duration: Math.round(smp.dur * 1e6), data: smp.data }));
         }
+        // keep the bytes until the audio has played: a stall or handoff re-decodes from here
+        const done = this.aDone || (this.aDone = new Map());
+        done.set(this.aNext, this.aSegs.get(this.aNext));
+        const played = this.currentTime() - 2;
+        for (const k of done.keys()) { const sg = segs[k]; if (sg.t + sg.dur < played) done.delete(k); }
         this.aSegs.delete(this.aNext);
         this.aNext++;
         await sleep(0);
@@ -433,9 +566,10 @@
     }
 
     rebuffer() {
-      // Ran dry (network slower than playback). Restart from the current position; the server
-      // cache keeps what was already downloaded, so re-fetching is local and fast.
+      // Ran dry (network slower than playback). Restart decoding from the current position,
+      // reusing every segment already downloaded or in flight.
       this.o.log && this.o.log(`stall at ${this.currentTime().toFixed(1)}s, rebuffering`);
+      this.rebuffering = true; // seek() keeps the downloaded segments and sets the restart cushion
       this.seek(this.currentTime());
     }
 
