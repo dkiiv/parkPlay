@@ -68,6 +68,7 @@
       this.stopAudio();
       this.seekTarget = sec;
       this.anchor = null; // (audioCtx.currentTime, mediaTime) set when audio starts
+      this.clk.smooth = undefined; // a new anchor may legitimately move the clock backwards
       this.setState('buffering');
       // video: decode from the segment containing `sec`, discard frames before sec
       const vi = this.segIndexAt(sec);
@@ -104,6 +105,7 @@
     pause() { if (this.paused) return; this.paused = true; this.audioCtx && this.audioCtx.suspend(); this.setState('paused'); }
     play() {
       if (!this.paused) return; this.paused = false;
+      this.clk.at = performance.now(); // don't extrapolate across the pause
       this.audioCtx && this.audioCtx.resume();
       this.setState(this.anchor ? 'playing' : 'buffering');
     }
@@ -117,8 +119,21 @@
       if (raw !== this.clk.raw) {
         if (this.clk.raw !== null && raw > this.clk.raw) { const step = raw - this.clk.raw; if (step > this.stats.clkStepMax) this.stats.clkStepMax = step; this.stats.clkSteps++; }
         this.clk.raw = raw; this.clk.at = now;
+        // offset of the audio clock against performance.now(). A tick notices an update up to one
+        // frame late, which only ever makes the offset look smaller, so keep the max (decaying
+        // 0.5 ms per update to follow drift); restart it after a big backwards jump (stall).
+        const off = raw - now / 1000;
+        this.clk.off = this.clk.off === undefined || off < this.clk.off - 0.1 ? off : Math.max(off, this.clk.off - 0.0005);
       }
-      return raw;
+      if (!this.o.clockSmooth || this.paused || ctx.state !== 'running' || this.clk.off === undefined) { this.clk.off = undefined; return raw; }
+      // Between updates the audio hardware keeps playing, so extrapolate (the car advances
+      // currentTime in ~43 ms steps: frames came due in pairs and every 4th-5th was dropped).
+      // Never run more than 100 ms past the last update, so a stalled audio thread or a
+      // suspended context can't let video run away from audio.
+      const t = Math.max(raw, Math.min(raw + 0.1, now / 1000 + this.clk.off));
+      if (this.clk.smooth !== undefined && t < this.clk.smooth && raw >= this.clk.smoothRaw) return this.clk.smooth; // monotonic within one anchor
+      this.clk.smooth = t; this.clk.smoothRaw = raw;
+      return t;
     }
     currentTime() {
       if (!this.anchor) return this.seekTarget || 0;
