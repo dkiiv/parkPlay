@@ -95,7 +95,7 @@ async function get(url, headers = {}) {
   const check = (name, ok, detail) => { results.push([name, ok]); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' :: ' + detail : ''}`); };
   const snap = () => ev(`({state:P.state,ct:+P.currentTime().toFixed(2),ahead:Math.round(P.bufferedAhead()),drawn:P.stats.drawn,dropped:P.stats.dropped,stalls:P.stats.stalls,startMs:P.stats.startMs,mb:+(P.stats.fetched/1e6).toFixed(1),sync:P.stats.lastFrameT==null?null:+(P.stats.lastFrameT-P.currentTime()).toFixed(3),q:P.vfmt&&(P.vfmt.height+'p'+P.vfmt.fps)})`);
   const waitState = async (want, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if ((await ev('P.state')) === want) return Date.now() - t0; await sleep(100); } return -1; };
-  const mkPlayer = (maxH, at) => ev(`(async()=>{if(window.P)P.destroy();const meta=window.META||(window.META=await (await fetch('/meta')).json());window.P=new TVPlayer(document.getElementById('c'),{meta,mediaBase:'',ticket:()=>${JSON.stringify(tk)},maxHeight:${maxH},aheadSec:120,log:(m)=>console.log(m),onError:(m)=>console.log('ERROR '+m)});P.start(${at});return 1})()`);
+  const mkPlayer = (maxH, at) => ev(`(async()=>{if(window.P)P.destroy();const meta=window.META||(window.META=await (await fetch('/meta')).json());window.P=new TVPlayer(document.getElementById('c'),{meta,mediaBase:'',ticket:()=>${JSON.stringify(tk)},maxHeight:${maxH},aheadSec:120,clockStepMs:${Number(process.env.CLOCK_STEP_MS || 0)},clockSmooth:${process.env.CLOCK_SMOOTH !== '0'},log:(m)=>console.log(m),onError:(m)=>console.log('ERROR '+m)});P.start(${at});return 1})()`);
   const MAXH = Number(process.env.MAXH || 720);
 
   // A) start + steady play
@@ -106,7 +106,7 @@ async function get(url, headers = {}) {
   for (let i = 0; i < 4; i++) { await sleep(2500); console.log('  t+' + (i + 1) * 2.5 + 's', JSON.stringify(await snap())); }
   let s1 = await snap();
   const adv = s1.ct - s0.ct, drawn = s1.drawn - s0.drawn, drop = s1.dropped - s0.dropped;
-  check('steady play', s1.state === 'playing' && adv > 9 && s1.stalls === 0 && drop <= Math.max(2, drawn * 0.02), `ct +${adv.toFixed(1)}s in 10s, drawn ${drawn}, dropped ${drop}, stalls ${s1.stalls}`);
+  check('steady play', s1.state === 'playing' && adv > 9 && s1.stalls === 0 && drop <= Math.max(2, drawn * 0.02), `ct +${adv.toFixed(1)}s in 10s, drawn ${drawn}, dropped ${drop}, drop ${drawn + drop ? Math.round(100 * drop / (drawn + drop)) : 0}%, stalls ${s1.stalls}`);
   check('a/v sync', s1.sync != null && Math.abs(s1.sync) < 0.1, `lastFrame - clock = ${s1.sync}s`);
   console.log('  clock', JSON.stringify(await ev('({step:+(P.stats.clkStepMax*1000).toFixed(1),steps:P.stats.clkSteps,freeze:P.stats.freezeMs,baseLat:Math.round(P.audioCtx.baseLatency*1000)})')));
 

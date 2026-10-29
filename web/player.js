@@ -27,7 +27,7 @@
       this.ctx2d = canvas.getContext('2d', { alpha: false, desynchronized: true });
       // maxQueued: decoded VideoFrames held before drawing. Keep this small: hardware decoders own a
       // small pool of output surfaces and stall while the app holds them, then deliver late bursts.
-      this.o = Object.assign({ maxHeight: 720, aheadSec: 120, aheadBytes: 80 * 1024 * 1024, allow60: false, maxQueued: 8 }, o);
+      this.o = Object.assign({ maxHeight: 720, aheadSec: 120, aheadBytes: 80 * 1024 * 1024, allow60: false, maxQueued: 8, clockStepMs: 0, clockSmooth: true }, o);
       this.meta = o.meta;
       this.state = 'idle';
       this.gen = 0;              // bumps on every seek/destroy; stale async work checks it
@@ -112,7 +112,8 @@
     // clockStepMs beacon field); desktop Chrome every 128 samples.
     ctxTime() {
       const ctx = this.audioCtx; if (!ctx) return 0;
-      const raw = ctx.currentTime, now = performance.now();
+      let raw = ctx.currentTime; const now = performance.now();
+      if (this.o.clockStepMs) { const st = this.o.clockStepMs / 1000; raw = Math.floor(raw / st) * st; } // test hook: simulate the car's coarse clock
       if (raw !== this.clk.raw) {
         if (this.clk.raw !== null && raw > this.clk.raw) { const step = raw - this.clk.raw; if (step > this.stats.clkStepMax) this.stats.clkStepMax = step; this.stats.clkSteps++; }
         this.clk.raw = raw; this.clk.at = now;
