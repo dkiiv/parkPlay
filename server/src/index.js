@@ -162,7 +162,7 @@ const app = http.createServer(async (req, res) => {
     }
     if (p === '/api/account/signout' && req.method === 'POST') { await yt.signOut(); return json(res, 200, { ok: true }); }
     if (p === '/api/stats' && req.method === 'POST') {
-      log('player stats: ' + (await readBody(req, 4096)).replace(/\s+/g, ' ').slice(0, 400));
+      log('player stats: ' + (await readBody(req, 4096)).replace(/\s+/g, ' ').slice(0, 1500));
       res.writeHead(204); return res.end();
     }
     if (p === '/api/ticket') {
