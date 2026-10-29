@@ -489,7 +489,9 @@
       const ctx = this.audioCtx;
       while (this.aPending.length) {
         const { buf, mediaT } = this.aPending[0];
-        if (this.anchor.ctx + (mediaT - this.anchor.media) > ctx.currentTime + 3) break;
+        // 6 s ahead: the car's main thread can freeze for seconds (LTE outages), and audio already
+        // handed to Web Audio keeps playing through it. ~280 nodes to cancel on a seek is cheap.
+        if (this.anchor.ctx + (mediaT - this.anchor.media) > ctx.currentTime + 6) break;
         this.aPending.shift();
         const when = this.anchor.ctx + (mediaT - this.anchor.media);
         const end = when + buf.duration;
@@ -570,7 +572,7 @@
         if (this.dead) return;
         this.raf = requestAnimationFrame(tick);
         const now = performance.now();
-        if (this.lastRaf) { const gap = now - this.lastRaf; if (gap > this.stats.rafGapMax) this.stats.rafGapMax = Math.round(gap); if (gap > 1000) this.stats.freezeMs += Math.round(gap); }
+        if (this.lastRaf) { const gap = now - this.lastRaf; if (gap > this.stats.rafGapMax) this.stats.rafGapMax = Math.round(gap); if (gap > 1000) { this.stats.freezeMs += Math.round(gap); this.graceUntil = now + 2000; } }
         this.lastRaf = now; this.stats.rafs++;
         if (!this.anchor) { this.maybeStartPlayback(this.gen); return; }
         const ct = this.currentTime();
@@ -578,7 +580,9 @@
         // stall detection: audio ran out -> pause the clock and rebuffer
         const audioDry = this.aFetchedEnd && ct > this.aFetchedEnd - 0.05 && !this.aEnded;
         const videoDry = !this.vEnded && !this.vq.length && this.vDecodedEnd && ct > this.vDecodedEnd + 0.5;
-        if (!this.paused && (audioDry || videoDry)) {
+        // after a renderer freeze the decoder and fetches need a moment to catch up: an empty
+        // frame queue right then is not "ran dry" (which would rebuffer with a 10-30 s cushion)
+        if (!this.paused && now > (this.graceUntil || 0) && (audioDry || videoDry)) {
           this.stats.stalls++;
           this.rebuffer();
           return;
