@@ -276,15 +276,17 @@
     const s = player.stats, p = prevStats && prevStats.id === player.meta.id && prevStats.gen === player ? prevStats : null;
     const dDrawn = s.drawn - (p ? p.drawn : 0), dDrop = s.dropped - (p ? p.dropped : 0), dRaf = s.rafs - (p ? p.rafs : 0);
     const win = { drawn: dDrawn, dropped: dDrop, dropPct: dDrawn + dDrop ? Math.round(100 * dDrop / (dDrawn + dDrop)) : 0, late: s.late - (p ? p.late : 0),
-      rafHz: Math.round(dRaf / 15), drawMsAvg: dDrawn ? +((s.drawMs - (p ? p.drawMs : 0)) / dDrawn).toFixed(2) : 0, rafGapMax: s.rafGapMax, vqMax: s.vqMax };
-    s.rafGapMax = 0; s.vqMax = 0;
+      rafHz: Math.round(dRaf / 15), drawMsAvg: dDrawn ? +((s.drawMs - (p ? p.drawMs : 0)) / dDrawn).toFixed(2) : 0, rafGapMax: s.rafGapMax, vqMax: s.vqMax,
+      clockStepMs: Math.round(s.clkStepMax * 1000), clockHz: Math.round((s.clkSteps - (p ? p.clkSteps : 0)) / 15), freezeMs: s.freezeMs - (p ? p.freezeMs : 0) };
+    s.rafGapMax = 0; s.vqMax = 0; s.clkStepMax = 0;
     const n = player.netSample ? player.netSample() : { bytes: 0, busyMs: 0 };
     const dBusy = n.busyMs - (p ? p.busyMs : 0), dBytes = n.bytes - (p ? p.bytes : 0);
     win.kbps = dBusy > 500 ? Math.round(dBytes * 8 / dBusy) : null; // goodput while fetching (null = idle)
     win.stalls = s.stalls - (p ? p.stalls : 0);
-    prevStats = { id: player.meta.id, gen: player, drawn: s.drawn, dropped: s.dropped, rafs: s.rafs, late: s.late, drawMs: s.drawMs, busyMs: n.busyMs, bytes: n.bytes, stalls: s.stalls };
+    prevStats = { id: player.meta.id, gen: player, drawn: s.drawn, dropped: s.dropped, rafs: s.rafs, late: s.late, drawMs: s.drawMs, busyMs: n.busyMs, bytes: n.bytes, stalls: s.stalls, clkSteps: s.clkSteps, freezeMs: s.freezeMs };
     const v = player.vfmt || {};
-    const body = JSON.stringify({ id: player.meta.id, q: v.height, fps: v.fps, needKbps: player.mediaKbps ? Math.round(player.mediaKbps()) : null, hw: s.hw, canvas: [player.canvas.width, player.canvas.height], state: player.state, t: Math.round(player.currentTime()), ahead: Math.round(player.bufferedAhead()), drawn: s.drawn, dropped: s.dropped, stalls: s.stalls, mb: +(s.fetched / 1e6).toFixed(1), startMs: s.startMs, indexMs: s.indexMs, win });
+    const body = JSON.stringify({ id: player.meta.id, q: v.height, fps: v.fps, needKbps: player.mediaKbps ? Math.round(player.mediaKbps()) : null, hw: s.hw, canvas: [player.canvas.width, player.canvas.height], state: player.state, t: Math.round(player.currentTime()), ahead: Math.round(player.bufferedAhead()), drawn: s.drawn, dropped: s.dropped, stalls: s.stalls, mb: +(s.fetched / 1e6).toFixed(1), startMs: s.startMs, indexMs: s.indexMs,
+      aState: player.audioCtx ? player.audioCtx.state : null, baseLat: player.audioCtx ? Math.round((player.audioCtx.baseLatency || 0) * 1000) : null, rate: player.audioCtx ? player.audioCtx.sampleRate : null, win });
     try { navigator.sendBeacon('/api/stats', body); } catch (e) { /* ignore */ }
     autoQuality(win);
   }

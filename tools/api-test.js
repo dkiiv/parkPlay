@@ -108,6 +108,7 @@ async function get(url, headers = {}) {
   const adv = s1.ct - s0.ct, drawn = s1.drawn - s0.drawn, drop = s1.dropped - s0.dropped;
   check('steady play', s1.state === 'playing' && adv > 9 && s1.stalls === 0 && drop <= Math.max(2, drawn * 0.02), `ct +${adv.toFixed(1)}s in 10s, drawn ${drawn}, dropped ${drop}, stalls ${s1.stalls}`);
   check('a/v sync', s1.sync != null && Math.abs(s1.sync) < 0.1, `lastFrame - clock = ${s1.sync}s`);
+  console.log('  clock', JSON.stringify(await ev('({step:+(P.stats.clkStepMax*1000).toFixed(1),steps:P.stats.clkSteps,freeze:P.stats.freezeMs,baseLat:Math.round(P.audioCtx.baseLatency*1000)})')));
 
   // B) pause / resume
   await ev('P.pause()'); await sleep(300); const p0 = await snap(); await sleep(3000); const p1 = await snap();

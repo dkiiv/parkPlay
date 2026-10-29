@@ -34,7 +34,9 @@
       this.vq = [];              // decoded VideoFrames waiting to be drawn (sorted by ts)
       this.paused = false;
       this.rate = 1;
-      this.stats = { netBytes: 0, netBusyMs: 0, fetched: 0, dropped: 0, drawn: 0, stalls: 0, startMs: 0, decoded: 0, late: 0, drawMs: 0, rafs: 0, rafGapMax: 0, vqMax: 0 };
+      this.stats = { netBytes: 0, netBusyMs: 0, fetched: 0, dropped: 0, drawn: 0, stalls: 0, startMs: 0, decoded: 0, late: 0, drawMs: 0, rafs: 0, rafGapMax: 0, vqMax: 0,
+        clkStepMax: 0, clkSteps: 0, freezeMs: 0 }; // clk*: how coarsely AudioContext.currentTime advances; freezeMs: rAF gaps > 1 s (renderer frozen)
+      this.clk = { raw: null, at: 0 }; // last distinct AudioContext.currentTime and when it was seen
       this.raf = 0;
       this.audioCtx = null;
       this.gain = null;
@@ -106,9 +108,20 @@
       this.setState(this.anchor ? 'playing' : 'buffering');
     }
     setVolume(v) { this.volume = v; if (this.gain) this.gain.gain.value = v; }
+    // Observe how AudioContext.currentTime advances. The car updates it in coarse steps (see the
+    // clockStepMs beacon field); desktop Chrome every 128 samples.
+    ctxTime() {
+      const ctx = this.audioCtx; if (!ctx) return 0;
+      const raw = ctx.currentTime, now = performance.now();
+      if (raw !== this.clk.raw) {
+        if (this.clk.raw !== null && raw > this.clk.raw) { const step = raw - this.clk.raw; if (step > this.stats.clkStepMax) this.stats.clkStepMax = step; this.stats.clkSteps++; }
+        this.clk.raw = raw; this.clk.at = now;
+      }
+      return raw;
+    }
     currentTime() {
       if (!this.anchor) return this.seekTarget || 0;
-      const t = this.anchor.media + (this.audioCtx.currentTime - this.anchor.ctx);
+      const t = this.anchor.media + (this.ctxTime() - this.anchor.ctx);
       const d = this.duration();
       return d ? Math.min(t, d) : t; // the audio clock keeps running after the last sample
     }
@@ -526,7 +539,7 @@
         if (this.dead) return;
         this.raf = requestAnimationFrame(tick);
         const now = performance.now();
-        if (this.lastRaf) { const gap = now - this.lastRaf; if (gap > this.stats.rafGapMax) this.stats.rafGapMax = Math.round(gap); }
+        if (this.lastRaf) { const gap = now - this.lastRaf; if (gap > this.stats.rafGapMax) this.stats.rafGapMax = Math.round(gap); if (gap > 1000) this.stats.freezeMs += Math.round(gap); }
         this.lastRaf = now; this.stats.rafs++;
         if (!this.anchor) { this.maybeStartPlayback(this.gen); return; }
         const ct = this.currentTime();
