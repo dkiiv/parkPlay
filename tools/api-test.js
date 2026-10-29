@@ -129,6 +129,20 @@ async function get(url, headers = {}) {
   const tQ = await waitState('playing', 10000); await sleep(2000); const q1 = await snap();
   check('quality switch', tQ >= 0 && q1.q.startsWith('360') && Math.abs(q1.ct - at) < 4, `${q1.q} playing in ${tQ} ms at ${q1.ct} (from ${at.toFixed(1)})`);
 
+  // G) audio context suspended by the platform (the car taking audio focus): the state change is
+  //    reported, and playback resumes on a "tap" (resumeAudio)
+  await ev('P.audioCtx.suspend()'); await sleep(1500);
+  const gS = await snap(); const stChanges = await ev('P.stats.aStateChanges||0');
+  await ev('P.resumeAudio()'); await sleep(2500);
+  const gR = await snap();
+  check('audio interruption', (await ev('P.audioCtx.state')) === 'running' && gR.ct > gS.ct + 1 && stChanges >= 1, `state changes ${stChanges}, ct ${gS.ct} -> ${gR.ct}`);
+
+  // H) 3 s main-thread freeze (the car does this during LTE outages): no stall, clock keeps going
+  const hS = await snap();
+  await ev('(()=>{const t=performance.now();while(performance.now()-t<3000){}})()'); await sleep(3000);
+  const hR = await snap(); const freeze = await ev('P.stats.freezeMs');
+  check('3 s renderer freeze', hR.stalls === hS.stalls && hR.state === 'playing' && hR.ct > hS.ct + 4 && freeze >= 2500, `freezeMs ${freeze}, stalls ${hS.stalls}->${hR.stalls}, ct ${hS.ct}->${hR.ct}, state ${hR.state}`);
+
   // E) end of video (clock must stop at the duration)
   await ev(`P.seek(${Math.max(0, dur - 6)})`);
   const tEnd = await waitState('ended', 15000);

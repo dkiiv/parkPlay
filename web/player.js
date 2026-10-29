@@ -53,6 +53,18 @@
       this.gain = this.gain || this.audioCtx.createGain();
       this.gain.connect(this.audioCtx.destination);
       this.gain.gain.value = this.volume;
+      // Keep-alive: an inaudible 0.5 Hz tone keeps the context rendering through buffering pauses,
+      // so the car doesn't reclaim the audio output and suspend us (Tesla browser behaviour).
+      if (!this.keepAlive) {
+        const osc = this.audioCtx.createOscillator(), kg = this.audioCtx.createGain();
+        osc.frequency.value = 0.5; kg.gain.value = 0.00001; osc.connect(kg); kg.connect(this.audioCtx.destination); osc.start(); this.keepAlive = osc;
+      }
+      // The car can suspend/interrupt the context on its own (which freezes the master clock).
+      // Surface it: the app asks for a tap, and a tap calls resumeAudio() inside the gesture.
+      if (!this.onCtxState) {
+        this.onCtxState = () => { if (this.dead) return; const st = this.audioCtx.state; this.stats.aStateChanges = (this.stats.aStateChanges || 0) + 1; this.o.log && this.o.log('audio context ' + st); this.o.onAudioState && this.o.onAudioState(st); };
+        this.audioCtx.addEventListener('statechange', this.onCtxState);
+      }
       this.setState('loading');
       const t0 = performance.now(); this.stats.t0 = t0;
       await Promise.all([this.loadVideoIndex(), this.loadAudioIndex()]);
@@ -109,6 +121,7 @@
       this.audioCtx && this.audioCtx.resume();
       this.setState(this.anchor ? 'playing' : 'buffering');
     }
+    resumeAudio() { if (this.audioCtx && this.audioCtx.state !== 'running' && !this.paused) this.audioCtx.resume().catch(() => {}); }
     setVolume(v) { this.volume = v; if (this.gain) this.gain.gain.value = v; }
     // Observe how AudioContext.currentTime advances. The car updates it in coarse steps (see the
     // clockStepMs beacon field); desktop Chrome every 128 samples.
@@ -193,6 +206,8 @@
       try { this.vdec && this.vdec.state !== 'closed' && this.vdec.close(); } catch (e) { /* closed */ }
       try { this.adec && this.adec.state !== 'closed' && this.adec.close(); } catch (e) { /* closed */ }
       try { this.gain && this.gain.disconnect(); } catch (e) { /* gone */ }
+      try { this.keepAlive && this.keepAlive.stop(); } catch (e) { /* done */ }
+      if (this.audioCtx && this.onCtxState) this.audioCtx.removeEventListener('statechange', this.onCtxState);
       try { if (this.audioCtx && !this.keepCtx) this.audioCtx.close(); } catch (e) { /* closed */ }
     }
 

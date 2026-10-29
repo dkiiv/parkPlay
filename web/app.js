@@ -11,7 +11,7 @@
   const fmtViews = (n) => !n ? '' : n >= 1e9 ? (n / 1e9).toFixed(1) + 'B views' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M views' : n >= 1e3 ? Math.round(n / 1e3) + 'K views' : n + ' views';
   const esc = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  let toastT = 0;
+  let toastT = 0, audioStuckT = 0;
   function toast(msg, ms = 2500) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hidden'), ms); }
 
   // ---------- capability check ----------
@@ -197,6 +197,14 @@
         $('w-buf').textContent = ahead > 1 ? `${Math.round(ahead)} s buffered` : '';
       },
       onError: (m) => { if (!live()) return; spinner(null); toast('Playback error: ' + m, 6000); },
+      onAudioState: (st) => {
+        if (!live()) return;
+        clearTimeout(audioStuckT);
+        if (st === 'running' || me.paused) { $('toast').classList.add('hidden'); return; }
+        // the car took the audio output; resume() only works from a tap, so ask for one after 3 s
+        audioStuckT = setTimeout(() => { if (live() && me.audioCtx.state !== 'running' && !me.paused) toast('Audio was interrupted by the car - tap the video to resume', 60000); }, 3000);
+        try { navigator.sendBeacon('/api/clientlog', JSON.stringify({ msg: 'audio context ' + st + ' at ' + Math.round(me.currentTime()) + 's' })); } catch (e) { /* ignore */ }
+      },
     });
     return me;
   }
@@ -251,12 +259,21 @@
   $('w-rew').onclick = (e) => { e.stopPropagation(); cancelSwitch(); if (player) player.seek(player.currentTime() - 10); showOverlay(); };
   $('w-fwd').onclick = (e) => { e.stopPropagation(); cancelSwitch(); if (player) player.seek(player.currentTime() + 10); showOverlay(); };
   $('w-full').onclick = (e) => { e.stopPropagation(); document.body.classList.toggle('full'); showOverlay(); };
+
+  // Car full screen: the Tesla browser hides its address bar for a page reached through YouTube's
+  // redirect endpoint (a widely used trick; YouTube shows one "Go to site" confirmation). We come
+  // back with ?fs=1 and hide the button for the session. Harmless in a desktop browser.
+  const nav = (u) => { if (window.__tvNav) return window.__tvNav(u); location.href = u; }; // __tvNav: test hook
+  if (new URLSearchParams(location.search).get('fs') === '1') { sessionStorage.setItem('tv.fs', '1'); history.replaceState(null, '', location.pathname); }
+  if (sessionStorage.getItem('tv.fs')) $('b-carfull').classList.add('hidden');
+  $('b-carfull').onclick = () => nav('https://www.youtube.com/redirect?q=' + encodeURIComponent(location.origin + '/?fs=1'));
   $('w-q').onchange = (e) => {
     quality = Number(e.target.value); localStorage.setItem('tv.q', quality);
     if (player && curVideo) { const at = player.currentTime(); const meta = player.meta; badWindows = 0; startPlayer(meta, at); }
   };
   // tap the video: toggle controls
   $('stage').addEventListener('click', (e) => {
+    if (player) player.resumeAudio(); // every tap is a user gesture: the only way back after the car suspends audio
     if (e.target.closest('button,select,#seek')) return;
     if ($('overlay').classList.contains('show') && player && player.state === 'playing') $('overlay').classList.remove('show'); else showOverlay();
   });

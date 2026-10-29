@@ -145,6 +145,13 @@ const srv = http.createServer(async (req, res) => {
   const freshCall = feedCalls.slice(nFeed).find((q) => q.includes('fresh=1'));
   check('refresh button', freshCall && t >= 0 && refreshIcon, `request ${freshCall || 'none'}, grid back in ${t} ms, icon ok ${refreshIcon}, first thumbs changed ${firstIds !== (await ev(`[...document.querySelectorAll('#grid .card:not(.sk) .thumb img')].slice(0,3).map(i=>i.src).join()`))}`);
 
+  // 3a2) car full-screen button: icon inside the button, navigates via youtube.com/redirect back to /?fs=1
+  await ev(`window.__navTo=null; window.__tvNav=(u)=>{window.__navTo=u}`);
+  await tap('#b-carfull');
+  const navTo = await ev('window.__navTo');
+  const fullIcon = await ev(`(()=>{const b=document.getElementById('b-carfull'),s=b.querySelector('svg');const bb=b.getBoundingClientRect(),sb=s.getBoundingClientRect();return sb.width>=20&&sb.left>=bb.left&&sb.right<=bb.right&&sb.top>=bb.top&&sb.bottom<=bb.bottom})()`);
+  check('car full-screen button', typeof navTo === 'string' && navTo.startsWith('https://www.youtube.com/redirect?q=') && decodeURIComponent(navTo.split('q=')[1]).endsWith('/?fs=1') && fullIcon === true, `${navTo}, icon ok ${fullIcon}`);
+
   // 3b) grid layout: no two cards overlap, and each card's thumb/title/meta stays inside it, at
   // the car viewport and at common desktop widths (regression: the probe page's global .card
   // rule gave grid cards a fixed width + margins, so they overlapped).
