@@ -310,9 +310,9 @@
   setInterval(reportStats, 15000);
 
   // Step down one quality level only when the DECODER can't keep up: frames come out of it after
-  // their display time ("late") in two consecutive windows. Drops caused by the screen painting
-  // slower than the video frame rate (car: ~24 paints/s vs 30 fps video) are not fixed by a
-  // lower resolution, so they never trigger this. The saved preference is untouched.
+  // their display time ("late") in two consecutive windows. Drops with `late` 0 are a pacing
+  // problem (the car's audio clock advances in ~43 ms steps; Player.ctxTime() smooths it) and
+  // are not fixed by a lower resolution, so they never trigger this. The saved preference is untouched.
   const LEVELS = [360, 480, 720, 1080];
   function autoQuality(win) {
     if (pending) return;

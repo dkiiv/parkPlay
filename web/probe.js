@@ -65,6 +65,17 @@
   setCap('deviceMemory', navigator.deviceMemory || 'n/a');
   setCap('connection', navigator.connection ? { type: navigator.connection.effectiveType, downlink: navigator.connection.downlink } : 'n/a');
 
+  // Hardware vs software WebCodecs decode per codec (async; rows appear within a second, well
+  // before anyone taps "send"). AV1/VP9 would cut the car's LTE data at the same quality.
+  (async () => {
+    if (!('VideoDecoder' in window)) return;
+    const vdec = async (codec, hw) => { try { const r = await VideoDecoder.isConfigSupported({ codec, hardwareAcceleration: hw }); return !!r.supported; } catch (e) { return false; } };
+    for (const [name, codec] of [['h264 high', 'avc1.64001f'], ['hevc main', 'hev1.1.6.L93.B0'], ['vp9 p0', 'vp09.00.31.08'], ['av1 main', 'av01.0.08M.08']]) {
+      setCap(`VideoDecoder ${name} hw`, await vdec(codec, 'prefer-hardware'));
+      setCap(`VideoDecoder ${name} sw`, await vdec(codec, 'prefer-software'));
+    }
+  })();
+
   report.screen = {
     screen: screen.width + 'x' + screen.height,
     avail: screen.availWidth + 'x' + screen.availHeight,
