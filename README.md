@@ -81,7 +81,7 @@ Details: [docs/architecture.md](docs/architecture.md).
   detected at runtime; without it the UI says "browsing only". Tested on a 2025 Model 3 (AMD
   Ryzen MCU). Open `/probe` in the car to get a capability report.
 - **Host:** Ubuntu 24.04+ or Debian 13 (an unprivileged LXC with `nesting=1` works), about
-  4-6 vCPU, 4-6 GB RAM, ~10 GB disk for the media cache, no GPU. Node.js >= 20 and
+  4-6 vCPU, 4-6 GB RAM, ~10 GB disk for the media cache, no GPU. Node.js >= 22 (the PO token provider needs it) and
   [yt-dlp](https://github.com/yt-dlp/yt-dlp) (keep it current; YouTube changes often).
 - **Network:** a Cloudflare zone (Tunnel + Access, free plan is enough) for the UI hostname, and a
   second public hostname with a valid TLS certificate for media, reachable directly (a VPS
@@ -102,6 +102,24 @@ Details: [docs/architecture.md](docs/architecture.md).
    sudo curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
    sudo chmod 755 /usr/local/bin/yt-dlp
    ```
+
+   Then a PO token provider for it. Without one, YouTube serves only about the first minute of
+   each video and answers every later byte range with 403. ParkPlay uses
+   [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
+   (Node >= 22; after step 4, since the unit runs as the `parkplay` user):
+
+   ```bash
+   V=2.0.2   # keep the server and the plugin on the same release
+   sudo git clone -q --single-branch --branch $V https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil-pot/src
+   (cd /opt/bgutil-pot/src/server && sudo npm ci --no-audit --no-fund && sudo npx tsc)
+   sudo mkdir -p /etc/yt-dlp-plugins
+   sudo curl -fsSL -o /etc/yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip \
+        https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/$V/bgutil-ytdlp-pot-provider.zip
+   sudo install -m 644 /opt/parkplay/deploy/lxc/bgutil-pot.service /etc/systemd/system/
+   sudo systemctl daemon-reload && sudo systemctl enable --now bgutil-pot
+   ```
+
+   Check: `yt-dlp -v -F <id>` as `parkplay` lists `PO Token Providers: bgutil:http-...`.
 
 4. Install ParkPlay:
 

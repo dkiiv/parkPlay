@@ -1,0 +1,18 @@
+[Unit]
+Description=bgutil PO token provider for yt-dlp (YouTube GVS tokens; ParkPlay media 403 fix)
+After=network-online.target
+Wants=network-online.target
+Before=parkplay-web.service
+
+[Service]
+User=parkplay
+Group=parkplay
+WorkingDirectory=/opt/bgutil-pot/src/server
+ExecStart=/usr/bin/node build/main.js --host 127.0.0.1 --port 4416
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

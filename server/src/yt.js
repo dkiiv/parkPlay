@@ -152,8 +152,12 @@ class YT {
     if (!force && this.inflight.has(key)) return this.inflight.get(key);
     const p = (async () => {
       const ck = await this.cookieArgs();
-      // skip=hls,translated_subs: we only use https DASH formats; saves ~0.4 s per resolve
-      const d = await this.run([...ck, '-J', '--skip-download', '--extractor-args', 'youtube:skip=hls,translated_subs', `https://www.youtube.com/watch?v=${id}`], 60000);
+      // skip=hls,translated_subs: we only use https DASH formats; saves ~0.4 s per resolve.
+      // fetch_pot=always: YouTube now wants a GVS PO token on the web_embedded https formats too, but
+      // yt-dlp doesn't ask for one there; without it googlevideo serves ~the first minute, then 403s
+      // every later Range (re-resolving doesn't help). Needs a PO token provider plugin (bgutil, see
+      // deploy/lxc/bgutil-pot.service); without one yt-dlp warns and returns the same URLs as before.
+      const d = await this.run([...ck, '-J', '--skip-download', '--extractor-args', 'youtube:skip=hls,translated_subs;fetch_pot=always', `https://www.youtube.com/watch?v=${id}`], 60000);
       if (d.is_live) throw new Error('live streams are not supported yet');
       const ok = (f) => f.protocol === 'https' && f.url && f.filesize;
       const video = d.formats.filter((f) => ok(f) && /^avc1/.test(f.vcodec || '') && (f.acodec === 'none' || !f.acodec))
