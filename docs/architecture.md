@@ -114,7 +114,9 @@ on-screen keyboard can be used. The client holds incoming chunks in an adaptive 
 (250 ms-4 s). ffmpeg stops 30 s after the last viewer leaves.
 
 After signing in, `/api/account` reads the youtube.com/google.com cookies from Chrome via CDP and
-writes `TV_STATE_DIR/cookies.txt` (mode 600), which yt-dlp uses for personal feeds.
+writes `TV_STATE_DIR/cookies.txt` (mode 600), which yt-dlp uses for personal feeds. Stream URLs are
+resolved **signed out** and use the cookies only as a fallback (age-restricted, members-only): signed in,
+googlevideo stops serving each format after about a minute (see troubleshooting).
 
 ## Configuration
 

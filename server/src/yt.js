@@ -8,6 +8,23 @@ const { execFile } = require('child_process');
 
 const PREFETCH_CONCURRENCY = 4; // each yt-dlp resolve uses ~0.7 core for ~3 s; sized for a 4-6 vCPU host
 
+// The formats the car can play from a yt-dlp -J result: H.264 video-only + AAC m4a audio, progressive https.
+function pickFormats(d) {
+  if (d.is_live) throw new Error('live streams are not supported yet');
+  const ok = (f) => f.protocol === 'https' && f.url && f.filesize;
+  const video = (d.formats || []).filter((f) => ok(f) && /^avc1/.test(f.vcodec || '') && (f.acodec === 'none' || !f.acodec))
+    .map((f) => ({ itag: f.format_id, height: f.height, fps: f.fps, size: f.filesize, codec: f.vcodec, url: f.url, headers: f.http_headers || {} }))
+    .sort((a, b) => a.height - b.height || a.size - b.size);
+  const audio = (d.formats || []).filter((f) => ok(f) && f.ext === 'm4a' && f.vcodec === 'none' && /^mp4a/.test(f.acodec || '') && !/drc/.test(f.format_id))
+    .map((f) => ({ itag: f.format_id, size: f.filesize, codec: f.acodec, abr: f.abr, lang: f.language || null,
+      // YouTube auto-dubs share the itag (140-0, 140-1, ...) at near-identical bitrates; the original track
+      // has language_preference 10 / "original" in format_note, dubs are -1. Prefer original, then bitrate.
+      pref: (f.language_preference || 0) + (/original/i.test(f.format_note || '') ? 100 : 0),
+      url: f.url, headers: f.http_headers || {} }))
+    .sort((a, b) => (b.pref - a.pref) || ((b.abr || 0) - (a.abr || 0)));
+  return { video, audio };
+}
+
 const FEEDS = {
   home: ':ytrec',
   subs: ':ytsubs',
@@ -153,23 +170,26 @@ class YT {
     const p = (async () => {
       const ck = await this.cookieArgs();
       // skip=hls,translated_subs: we only use https DASH formats; saves ~0.4 s per resolve.
-      // fetch_pot=always: YouTube now wants a GVS PO token on the web_embedded https formats too, but
-      // yt-dlp doesn't ask for one there; without it googlevideo serves ~the first minute, then 403s
-      // every later Range (re-resolving doesn't help). Needs a PO token provider plugin (bgutil, see
-      // deploy/lxc/bgutil-pot.service); without one yt-dlp warns and returns the same URLs as before.
-      const d = await this.run([...ck, '-J', '--skip-download', '--extractor-args', 'youtube:skip=hls,translated_subs;fetch_pot=always', `https://www.youtube.com/watch?v=${id}`], 60000);
-      if (d.is_live) throw new Error('live streams are not supported yet');
-      const ok = (f) => f.protocol === 'https' && f.url && f.filesize;
-      const video = d.formats.filter((f) => ok(f) && /^avc1/.test(f.vcodec || '') && (f.acodec === 'none' || !f.acodec))
-        .map((f) => ({ itag: f.format_id, height: f.height, fps: f.fps, size: f.filesize, codec: f.vcodec, url: f.url, headers: f.http_headers || {} }))
-        .sort((a, b) => a.height - b.height || a.size - b.size);
-      const audio = d.formats.filter((f) => ok(f) && f.ext === 'm4a' && f.vcodec === 'none' && /^mp4a/.test(f.acodec || '') && !/drc/.test(f.format_id))
-        .map((f) => ({ itag: f.format_id, size: f.filesize, codec: f.acodec, abr: f.abr, lang: f.language || null,
-          // YouTube auto-dubs share the itag (140-0, 140-1, ...) at near-identical bitrates; the original track
-          // has language_preference 10 / "original" in format_note, dubs are -1. Prefer original, then bitrate.
-          pref: (f.language_preference || 0) + (/original/i.test(f.format_note || '') ? 100 : 0),
-          url: f.url, headers: f.http_headers || {} }))
-        .sort((a, b) => (b.pref - a.pref) || ((b.abr || 0) - (a.abr || 0)));
+      // fetch_pot=always: ask the PO token provider (bgutil, deploy/lxc/bgutil-pot.service) for every
+      // client that can use one; yt-dlp's default `auto` skipped web_embedded.
+      const args = ['-J', '--skip-download', '--extractor-args', 'youtube:skip=hls,translated_subs;fetch_pot=always', `https://www.youtube.com/watch?v=${id}`];
+      // Resolve SIGNED OUT first. Signed in, yt-dlp only gets https formats from token-bound web clients
+      // (web_embedded/web_creator/mweb), and googlevideo serves ~the first minute of each, then answers
+      // every later Range with 403, PO token or not (2026-11-10; yt-dlp issue #18004). Signed out, the
+      // visionos client's URLs need no token and served every range in 8/8 probes. Cookies are only a
+      // fallback (age-restricted / members-only / bot check), which may again stop after a minute.
+      let d, picked;
+      try {
+        d = await this.run(args, 60000);
+        picked = pickFormats(d);
+        if (!picked.video.length || !picked.audio.length) throw new Error('no H.264/AAC https formats signed out');
+      } catch (e) {
+        if (!ck.length || /live streams/.test(e.message)) throw e;
+        this.log && this.log(`resolve ${id}: signed-out resolve failed (${e.message.slice(0, 160)}); retrying with cookies`);
+        d = await this.run([...ck, ...args], 60000);
+        picked = pickFormats(d);
+      }
+      const { video, audio } = picked;
       if (!video.length || !audio.length) throw new Error('no H.264/AAC formats for this video');
       const data = {
         id, title: d.title, channel: d.channel || d.uploader, channelUrl: d.channel_url || d.uploader_url,

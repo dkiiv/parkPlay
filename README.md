@@ -103,8 +103,10 @@ Details: [docs/architecture.md](docs/architecture.md).
    sudo chmod 755 /usr/local/bin/yt-dlp
    ```
 
-   Then a PO token provider for it. Without one, YouTube serves only about the first minute of
-   each video and answers every later byte range with 403. ParkPlay uses
+   Then a PO token provider for it. Playback URLs are resolved signed out (they need no token);
+   the provider is for the signed-in fallback (age-restricted / members-only videos), whose web
+   clients get only about the first minute of each video without a token, and sometimes even with
+   one. ParkPlay uses
    [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
    (Node >= 22; after step 4, since the unit runs as the `parkplay` user):
 
